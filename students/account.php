@@ -111,6 +111,16 @@ if (!$student) {
 $studentName = (string)($student['full_name'] ?? ($_SESSION['student_name'] ?? ''));
 $wallet = (float)($student['wallet_balance'] ?? 0);
 
+/* ✅ Auto-enroll free courses so they appear in "كورساتك" */
+try {
+  $pdo->prepare("
+    INSERT IGNORE INTO student_course_enrollments (student_id, course_id, access_type)
+    SELECT ?, c.id, 'free'
+    FROM courses c
+    WHERE c.access_type = 'free'
+  ")->execute([$studentId]);
+} catch (Throwable $e) { /* non-fatal */ }
+
 /* navigation */
 $page = (string)($_GET['page'] ?? 'home');
 $allowedPages = ['home','settings','platform_courses','my_courses'];
@@ -242,18 +252,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['action'] ?? '') ==
 
 if (isset($_GET['saved'])) $success = 'تم حفظ بيانات الحساب بنجاح.';
 
-/* Stats placeholders */
-$stats = [
-  ['label' => 'كورسات المنصة', 'value' => 0, 'icon' => '📚'],
-  ['label' => 'كورساتك', 'value' => 0, 'icon' => '🎓'],
-  ['label' => 'الواجبات المتاحة', 'value' => 0, 'icon' => '📝'],
-  ['label' => 'الامتحانات المتاحة', 'value' => 0, 'icon' => '🧠'],
-  ['label' => 'واجباتك', 'value' => 0, 'icon' => '✅'],
-  ['label' => 'امتحاناتك', 'value' => 0, 'icon' => '📌'],
-  ['label' => 'إجمالي درجات الواجبات', 'value' => 0, 'icon' => '🏆'],
-  ['label' => 'إجمالي درجات الامتحانات', 'value' => 0, 'icon' => '🥇'],
-];
-
 /* =========================
    Platform courses (NOT enrolled)
    ========================= */
@@ -333,6 +331,43 @@ if (!empty($allCoursesForMap)) {
   }
 }
 
+/* ✅ Compute real stats now that courses lists are loaded */
+$stats = [
+  ['label' => 'كورسات المنصة', 'value' => count($platformCourses), 'icon' => '📚'],
+  ['label' => 'كورساتك',       'value' => count($myCourses),        'icon' => '🎓'],
+  ['label' => 'رصيد المحفظة',  'value' => number_format($wallet, 2), 'icon' => '💳'],
+];
+
+// count total lectures available in enrolled courses
+$totalLectures = 0;
+$totalVideos   = 0;
+$totalPdfs     = 0;
+if (!empty($myCourses)) {
+  $enrolledCourseIds = array_values(array_filter(
+    array_map(fn($c) => (int)($c['id'] ?? 0), $myCourses),
+    fn($id) => $id > 0
+  ));
+  if (!empty($enrolledCourseIds)) {
+    $ph = implode(',', array_fill(0, count($enrolledCourseIds), '?'));
+    try {
+      $s = $pdo->prepare("SELECT COUNT(*) FROM lectures WHERE course_id IN ($ph)");
+      $s->execute($enrolledCourseIds);
+      $totalLectures = (int)$s->fetchColumn();
+
+      $s = $pdo->prepare("SELECT COUNT(*) FROM videos WHERE course_id IN ($ph)");
+      $s->execute($enrolledCourseIds);
+      $totalVideos = (int)$s->fetchColumn();
+
+      $s = $pdo->prepare("SELECT COUNT(*) FROM pdfs WHERE course_id IN ($ph)");
+      $s->execute($enrolledCourseIds);
+      $totalPdfs = (int)$s->fetchColumn();
+    } catch (Throwable $e) {}
+  }
+}
+$stats[] = ['label' => 'المحاضرات المتاحة لك', 'value' => $totalLectures, 'icon' => '🧑‍🏫'];
+$stats[] = ['label' => 'الفيديوهات المتاحة لك', 'value' => $totalVideos,   'icon' => '🎥'];
+$stats[] = ['label' => 'ملفات PDF المتاحة لك',  'value' => $totalPdfs,     'icon' => '📑'];
+
 /* ✅ cache-bust for account.css */
 $cssVer = (string)@filemtime(__DIR__ . '/assets/css/account.css');
 if ($cssVer === '' || $cssVer === '0') $cssVer = (string)time();
@@ -382,9 +417,16 @@ if ($cssVer === '' || $cssVer === '0') $cssVer = (string)time();
       .acc-brand__name{ display:none !important; }
     }
     .acc-actionsRow{display:flex;gap:10px;flex-wrap:wrap;margin:10px 0}
-    .acc-btnx{display:inline-flex;align-items:center;gap:8px;padding:10px 14px;border-radius:12px;font-weight:900;text-decoration:none}
+    .acc-btnx{display:inline-flex;align-items:center;gap:8px;padding:10px 14px;border-radius:12px;font-weight:900;text-decoration:none;cursor:pointer;border:none;font-family:inherit;font-size:1em}
     .acc-btnx--solid{background:#111;color:#fff}
     .acc-btnx--ghost{background:transparent;border:2px solid #111;color:#111}
+    /* Stats grid */
+    .acc-stats{margin:20px 0}
+    .acc-stats__grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+    .acc-stat{background:var(--card-bg,#fff);border:1px solid var(--border,#e2e8f0);border-radius:16px;padding:18px 14px;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,.05)}
+    .acc-stat__ico{font-size:2em;margin-bottom:6px}
+    .acc-stat__val{font-size:1.7em;font-weight:900;color:var(--accent,#0b63ce)}
+    .acc-stat__lbl{font-size:.85em;color:var(--muted,#666);margin-top:4px;font-weight:700}
   </style>
 
   <title>حساب الطالب - <?php echo h($platformName); ?></title>
@@ -493,6 +535,30 @@ if ($cssVer === '' || $cssVer === '0') $cssVer = (string)time();
       <?php if ($page === 'home'): ?>
         <section class="acc-hero">
           <h1>👋 أهلاً <?php echo h($studentName); ?></h1>
+          <p style="margin-top:6px;color:var(--muted);font-weight:700;">مرحباً بك في حسابك على المنصة.</p>
+        </section>
+
+        <section class="acc-stats" aria-label="إحصائيات">
+          <div class="acc-stats__grid">
+            <?php foreach ($stats as $st): ?>
+              <div class="acc-stat">
+                <div class="acc-stat__ico" aria-hidden="true"><?php echo h((string)$st['icon']); ?></div>
+                <div class="acc-stat__val"><?php echo is_numeric($st['value']) ? (int)$st['value'] : h((string)$st['value']); ?></div>
+                <div class="acc-stat__lbl"><?php echo h((string)$st['label']); ?></div>
+              </div>
+            <?php endforeach; ?>
+          </div>
+        </section>
+
+        <section class="acc-card" style="margin-top:20px;">
+          <div class="acc-card__head">
+            <h2>⚡ إجراءات سريعة</h2>
+          </div>
+          <div class="acc-actionsRow">
+            <button class="acc-btnx acc-btnx--solid" type="button" onclick="openRedeemModal()">🎫 تفعيل كود</button>
+            <a class="acc-btnx acc-btnx--ghost" href="account.php?page=my_courses">🎓 كورساتك</a>
+            <a class="acc-btnx acc-btnx--ghost" href="account.php?page=platform_courses">📚 كورسات المنصة</a>
+          </div>
         </section>
 
       <?php elseif ($page === 'platform_courses'): ?>
@@ -502,7 +568,7 @@ if ($cssVer === '' || $cssVer === '0') $cssVer = (string)time();
             <p>هنا تظهر الكورسات التي لست مشتركًا فيها.</p>
 
             <div class="acc-actionsRow">
-              <a class="acc-btnx acc-btnx--solid" href="redeem.php">🎫 تفعيل كود</a>
+              <button class="acc-btnx acc-btnx--solid" type="button" onclick="openRedeemModal()">🎫 تفعيل كود</button>
               <a class="acc-btnx acc-btnx--ghost" href="account.php?page=my_courses">🎓 كورساتك</a>
             </div>
           </div>
@@ -612,7 +678,7 @@ if ($cssVer === '' || $cssVer === '0') $cssVer = (string)time();
             <p>هنا تظهر الكورسات التي أنت مشترك فيها.</p>
 
             <div class="acc-actionsRow">
-              <a class="acc-btnx acc-btnx--solid" href="redeem.php">🎫 تفعيل كود</a>
+              <button class="acc-btnx acc-btnx--solid" type="button" onclick="openRedeemModal()">🎫 تفعيل كود</button>
               <a class="acc-btnx acc-btnx--ghost" href="account.php?page=platform_courses">📚 كورسات المنصة</a>
             </div>
           </div>
@@ -967,6 +1033,147 @@ if ($cssVer === '' || $cssVer === '0') $cssVer = (string)time();
       closeSidebar();
       closeNotifs();
     }
+  });
+})();
+</script>
+
+<!-- ✅ Redeem Code Modal -->
+<div id="redeemModal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.55);align-items:center;justify-content:center;" role="dialog" aria-modal="true" aria-label="تفعيل كود">
+  <div style="background:var(--card-bg,#fff);border-radius:18px;padding:28px 24px;max-width:420px;width:calc(100% - 32px);box-shadow:0 8px 40px rgba(0,0,0,.25);position:relative;font-family:inherit;">
+    <button onclick="closeRedeemModal()" style="position:absolute;top:12px;left:12px;background:none;border:none;font-size:1.4em;cursor:pointer;color:var(--muted,#888);" aria-label="إغلاق">✖</button>
+    <h3 style="margin:0 0 14px;font-size:1.2em;">🎫 تفعيل كود اشتراك</h3>
+
+    <div id="redeemMsg" style="display:none;padding:10px 14px;border-radius:10px;margin-bottom:12px;font-weight:700;"></div>
+
+    <div id="redeemCodeStep">
+      <input id="redeemCodeInput" type="text" placeholder="XXXX-XXXX-XXXX" style="width:100%;padding:12px;border:1px solid #ccc;border-radius:12px;font-size:1em;box-sizing:border-box;margin-bottom:10px;font-family:inherit;" dir="ltr">
+      <button onclick="submitRedeemCode()" style="width:100%;padding:12px;border:none;border-radius:12px;background:#111;color:#fff;font-size:1em;font-weight:700;cursor:pointer;font-family:inherit;">✅ تفعيل</button>
+    </div>
+
+    <div id="redeemCourseStep" style="display:none;">
+      <p style="margin:0 0 8px;font-weight:700;color:#b06000;">🎓 هذا الكود عام — اختر الكورس الذي تريد فتحه:</p>
+      <select id="redeemCourseSelect" style="width:100%;padding:12px;border:1px solid #ccc;border-radius:12px;font-size:1em;box-sizing:border-box;margin-bottom:10px;font-family:inherit;">
+        <option value="">-- اختر الكورس --</option>
+      </select>
+      <button onclick="submitRedeemWithCourse()" style="width:100%;padding:12px;border:none;border-radius:12px;background:#1a7a2a;color:#fff;font-size:1em;font-weight:700;cursor:pointer;font-family:inherit;">✅ تفعيل الكورس</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  var modal = document.getElementById('redeemModal');
+  var codeInput = document.getElementById('redeemCodeInput');
+  var msgBox = document.getElementById('redeemMsg');
+  var codeStep = document.getElementById('redeemCodeStep');
+  var courseStep = document.getElementById('redeemCourseStep');
+  var courseSelect = document.getElementById('redeemCourseSelect');
+  var lastCode = '';
+
+  window.openRedeemModal = function() {
+    modal.style.display = 'flex';
+    codeInput.value = '';
+    lastCode = '';
+    hideMsg();
+    showStep('code');
+    setTimeout(function(){ codeInput.focus(); }, 80);
+  };
+  window.closeRedeemModal = function() {
+    modal.style.display = 'none';
+  };
+
+  modal.addEventListener('click', function(e){ if (e.target === modal) closeRedeemModal(); });
+
+  function showMsg(text, ok) {
+    msgBox.textContent = text;
+    msgBox.style.display = 'block';
+    msgBox.style.background = ok ? '#e9ffe9' : '#ffe9e9';
+    msgBox.style.border = '1px solid ' + (ok ? '#8ad08a' : '#d08a8a');
+    msgBox.style.color = ok ? '#1a6a1a' : '#a00';
+  }
+  function hideMsg() {
+    msgBox.style.display = 'none';
+    msgBox.textContent = '';
+  }
+  function showStep(step) {
+    codeStep.style.display = step === 'code' ? 'block' : 'none';
+    courseStep.style.display = step === 'course' ? 'block' : 'none';
+  }
+
+  window.submitRedeemCode = async function() {
+    var code = codeInput.value.trim();
+    if (!code) { showMsg('من فضلك أدخل الكود.', false); return; }
+    lastCode = code;
+    hideMsg();
+    codeStep.querySelector('button').disabled = true;
+    codeStep.querySelector('button').textContent = '⏳ جاري التفعيل...';
+
+    try {
+      var fd = new FormData();
+      fd.append('code', code);
+      var res = await fetch('api/redeem_code_api.php', {method:'POST', body:fd});
+      var data = await res.json();
+
+      codeStep.querySelector('button').disabled = false;
+      codeStep.querySelector('button').textContent = '✅ تفعيل';
+
+      if (data.needs_target && data.target_type === 'course') {
+        // Show course picker
+        courseSelect.innerHTML = '<option value="">-- اختر الكورس --</option>';
+        (data.courses || []).forEach(function(c){
+          var o = document.createElement('option');
+          o.value = c.id;
+          o.textContent = c.name;
+          courseSelect.appendChild(o);
+        });
+        showStep('course');
+        showMsg(data.message || 'اختر الكورس المراد فتحه.', false);
+      } else if (data.ok) {
+        showMsg('✅ ' + (data.message || 'تم التفعيل بنجاح.'), true);
+        showStep('code');
+        setTimeout(function(){ closeRedeemModal(); location.reload(); }, 1800);
+      } else {
+        showMsg('❌ ' + (data.message || 'حدث خطأ.'), false);
+      }
+    } catch(e) {
+      codeStep.querySelector('button').disabled = false;
+      codeStep.querySelector('button').textContent = '✅ تفعيل';
+      showMsg('❌ حدث خطأ في الاتصال، حاول مرة أخرى.', false);
+    }
+  };
+
+  window.submitRedeemWithCourse = async function() {
+    var courseId = courseSelect.value;
+    if (!courseId) { showMsg('من فضلك اختر كورساً.', false); return; }
+    hideMsg();
+    courseStep.querySelector('button').disabled = true;
+    courseStep.querySelector('button').textContent = '⏳ جاري التفعيل...';
+
+    try {
+      var fd = new FormData();
+      fd.append('code', lastCode);
+      fd.append('target_course_id', courseId);
+      var res = await fetch('api/redeem_code_api.php', {method:'POST', body:fd});
+      var data = await res.json();
+
+      courseStep.querySelector('button').disabled = false;
+      courseStep.querySelector('button').textContent = '✅ تفعيل الكورس';
+
+      if (data.ok) {
+        showMsg('✅ ' + (data.message || 'تم التفعيل بنجاح.'), true);
+        setTimeout(function(){ closeRedeemModal(); location.reload(); }, 1800);
+      } else {
+        showMsg('❌ ' + (data.message || 'حدث خطأ.'), false);
+      }
+    } catch(e) {
+      courseStep.querySelector('button').disabled = false;
+      courseStep.querySelector('button').textContent = '✅ تفعيل الكورس';
+      showMsg('❌ حدث خطأ في الاتصال.', false);
+    }
+  };
+
+  document.addEventListener('keydown', function(e){
+    if (e.key === 'Escape' && modal.style.display !== 'none') closeRedeemModal();
   });
 })();
 </script>

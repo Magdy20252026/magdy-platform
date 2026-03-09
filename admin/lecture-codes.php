@@ -253,6 +253,15 @@ if (($_POST['action'] ?? '') === 'generate') {
 
           try {
             $stmt->execute([$code, $isGlobal, $lectureIdDb, $expiresDb, $adminId > 0 ? $adminId : null]);
+
+            // ✅ Also insert into access_codes so students can redeem via redeem modal
+            $expiresAtDt = ($expiresDb !== null) ? ($expiresDb . ' 23:59:59') : null;
+            $stmtAC = $pdo->prepare("
+              INSERT IGNORE INTO access_codes (code, type, course_id, lecture_id, is_active, max_uses, used_count, expires_at)
+              VALUES (?, 'lecture', NULL, ?, 1, 1, 0, ?)
+            ");
+            $stmtAC->execute([$code, $lectureIdDb, $expiresAtDt]);
+
             $created++;
             break;
           } catch (PDOException $e) {
