@@ -214,7 +214,9 @@ try {
   //     ✅ DOES NOT insert into access_codes (avoids CONSTRAINT_1)
   //     ✅ Records in legacy_code_redemptions
   // ------------------------------------------------------------
+  safeRollback($pdo);
   ensure_legacy_redemptions_table($pdo);
+  $pdo->beginTransaction();
 
   if (legacy_already_used_by_student($pdo, $code, $studentId)) {
     throw new RuntimeException('أنت استخدمت هذا الكود من قبل.');
