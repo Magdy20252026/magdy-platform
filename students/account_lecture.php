@@ -215,9 +215,9 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
     .buy-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
     .buy-row form{display:inline}
     .pill{padding:10px 12px;border:1px solid #ddd;border-radius:14px;font-weight:900}
-    .acc-modal-btn{display:inline-flex;align-items:center;gap:6px;padding:10px 14px;border:none;border-radius:12px;font-weight:700;cursor:pointer;font-family:inherit;font-size:1em}
+    .acc-modal-btn{display:inline-flex;align-items:center;gap:6px;padding:10px 14px;border:2px solid transparent;border-radius:12px;font-weight:700;cursor:pointer;font-family:inherit;font-size:1em}
     .acc-modal-btn--primary{background:#111;color:#fff}
-    .acc-modal-btn--ghost{background:transparent;border:2px solid #111;color:#111}
+    .acc-modal-btn--ghost{background:var(--page-bg);border-color:var(--border);color:var(--text)}
   </style>
 
   <title>تفاصيل المحاضرة - <?php echo h((string)$lecture['name']); ?></title>
