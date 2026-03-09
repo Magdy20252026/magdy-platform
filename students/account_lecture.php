@@ -130,6 +130,14 @@ $courseId = (int)($lecture['course_id'] ?? 0);
 $isCourseEnrolled = student_has_course_access($pdo, $studentId, $courseId);
 $isLectureOpen = student_has_lecture_access($pdo, $studentId, $lectureId);
 
+/* Redirect online student away from attendance-only course lectures */
+$studentStatus = (string)($student['status'] ?? 'اونلاين');
+$isOnline = ($studentStatus === 'اونلاين');
+if ($isOnline && (string)($lecture['course_access_type'] ?? '') === 'attendance') {
+  header('Location: account.php?page=platform_courses');
+  exit;
+}
+
 /* ✅ Last update inside this lecture */
 $lastLectureContentAt = '';
 try {
@@ -290,16 +298,15 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
       <?php endif; ?>
 
       <div class="buy-row">
-        <button class="acc-modal-btn acc-modal-btn--ghost" type="button" onclick="openRedeemModal('lecture', <?php echo (int)$lectureId; ?>)">🎫 تفعيل كود</button>
-
         <?php if ($isLectureOpen): ?>
           <span class="pill">✅ لديك صلاحية مشاهدة المحاضرة</span>
+        <?php elseif ($courseAccessType === 'attendance'): ?>
+          <span class="pill">ℹ️ هذه المحاضرة تفتح بالحضور فقط.</span>
         <?php else: ?>
-          <?php if (!$isCourseEnrolled): ?>
+          <button class="acc-modal-btn acc-modal-btn--ghost" type="button" onclick="openRedeemModal('lecture', <?php echo (int)$lectureId; ?>)">🎫 تفعيل كود</button>
+          <?php if (!$isCourseEnrolled && $courseAccessType === 'buy'): ?>
             <button class="acc-modal-btn acc-modal-btn--primary" type="button"
               onclick="openBuyLectureModal(<?php echo (int)$lectureId; ?>, '<?php echo h($lecturePriceText); ?>')">🛒 شراء المحاضرة بالمحفظة</button>
-          <?php else: ?>
-            <span class="pill">✅ أنت مشترك في الكورس، يجب أن تكون المحاضرة مفتوحة</span>
           <?php endif; ?>
         <?php endif; ?>
       </div>
