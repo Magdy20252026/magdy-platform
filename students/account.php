@@ -110,6 +110,7 @@ if (!$student) {
 
 $studentName = (string)($student['full_name'] ?? ($_SESSION['student_name'] ?? ''));
 $wallet = (float)($student['wallet_balance'] ?? 0);
+$studentStatus = (string)($student['status'] ?? 'اونلاين'); // 'اونلاين' | 'سنتر'
 
 /* ✅ Auto-enroll free courses so they appear in "كورساتك" */
 try {
@@ -257,6 +258,7 @@ if (isset($_GET['saved'])) $success = 'تم حفظ بيانات الحساب ب�
    ========================= */
 $platformCourses = [];
 try {
+  // Online students cannot see attendance courses
   $stmt = $pdo->prepare("
     SELECT
       c.*,
@@ -266,9 +268,10 @@ try {
     LEFT JOIN student_course_enrollments e
       ON e.course_id = c.id AND e.student_id = ?
     WHERE e.id IS NULL
+    AND (? = 'سنتر' OR c.access_type != 'attendance')
     ORDER BY c.id DESC
   ");
-  $stmt->execute([$studentId]);
+  $stmt->execute([$studentId, $studentStatus]);
   $platformCourses = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
 } catch (Throwable $e) {
   $platformCourses = [];
@@ -547,17 +550,6 @@ if ($cssVer === '' || $cssVer === '0') $cssVer = (string)time();
                 <div class="acc-stat__lbl"><?php echo h((string)$st['label']); ?></div>
               </div>
             <?php endforeach; ?>
-          </div>
-        </section>
-
-        <section class="acc-card" style="margin-top:20px;">
-          <div class="acc-card__head">
-            <h2>⚡ إجراءات سريعة</h2>
-          </div>
-          <div class="acc-actionsRow">
-            <button class="acc-btnx acc-btnx--solid" type="button" onclick="openRedeemModal()">🎫 تفعيل كود</button>
-            <a class="acc-btnx acc-btnx--ghost" href="account.php?page=my_courses">🎓 كورساتك</a>
-            <a class="acc-btnx acc-btnx--ghost" href="account.php?page=platform_courses">📚 كورسات المنصة</a>
           </div>
         </section>
 
