@@ -280,6 +280,50 @@ CREATE TABLE `exams` (
 -- --------------------------------------------------------
 
 --
+-- بنية الجدول `exam_attempts`
+--
+
+CREATE TABLE `exam_attempts` (
+  `id` int(10) UNSIGNED NOT NULL,
+  `exam_id` int(10) UNSIGNED NOT NULL,
+  `student_id` int(10) UNSIGNED NOT NULL,
+  `started_at` timestamp NULL DEFAULT NULL,
+  `submitted_at` timestamp NULL DEFAULT NULL,
+  `duration_minutes` int(10) UNSIGNED NOT NULL,
+  `score` decimal(12,2) NOT NULL DEFAULT 0.00,
+  `max_score` decimal(12,2) NOT NULL DEFAULT 0.00,
+  `status` enum('in_progress','submitted','expired') NOT NULL DEFAULT 'in_progress'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- بنية الجدول `exam_attempt_answers`
+--
+
+CREATE TABLE `exam_attempt_answers` (
+  `id` int(10) UNSIGNED NOT NULL,
+  `attempt_id` int(10) UNSIGNED NOT NULL,
+  `question_id` int(10) UNSIGNED NOT NULL,
+  `choice_id` int(10) UNSIGNED NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- بنية الجدول `exam_attempt_questions`
+--
+
+CREATE TABLE `exam_attempt_questions` (
+  `id` int(10) UNSIGNED NOT NULL,
+  `attempt_id` int(10) UNSIGNED NOT NULL,
+  `question_id` int(10) UNSIGNED NOT NULL,
+  `sort_order` int(10) UNSIGNED NOT NULL DEFAULT 0
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
 -- بنية الجدول `exam_questions`
 --
 
@@ -798,6 +842,32 @@ ALTER TABLE `exams`
   ADD KEY `idx_exam_bank` (`bank_id`);
 
 --
+-- Indexes for table `exam_attempts`
+--
+ALTER TABLE `exam_attempts`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_exam_id` (`exam_id`),
+  ADD KEY `idx_student_id` (`student_id`),
+  ADD KEY `idx_status` (`status`);
+
+--
+-- Indexes for table `exam_attempt_answers`
+--
+ALTER TABLE `exam_attempt_answers`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_attempt_id` (`attempt_id`),
+  ADD KEY `idx_question_id` (`question_id`),
+  ADD KEY `idx_choice_id` (`choice_id`);
+
+--
+-- Indexes for table `exam_attempt_questions`
+--
+ALTER TABLE `exam_attempt_questions`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_attempt_id` (`attempt_id`),
+  ADD KEY `idx_question_id` (`question_id`);
+
+--
 -- Indexes for table `exam_questions`
 --
 ALTER TABLE `exam_questions`
@@ -1075,6 +1145,24 @@ ALTER TABLE `exams`
   MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
+-- AUTO_INCREMENT for table `exam_attempts`
+--
+ALTER TABLE `exam_attempts`
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `exam_attempt_answers`
+--
+ALTER TABLE `exam_attempt_answers`
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `exam_attempt_questions`
+--
+ALTER TABLE `exam_attempt_questions`
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
 -- AUTO_INCREMENT for table `exam_questions`
 --
 ALTER TABLE `exam_questions`
@@ -1281,6 +1369,28 @@ ALTER TABLE `course_codes`
 ALTER TABLE `exams`
   ADD CONSTRAINT `fk_exam_bank` FOREIGN KEY (`bank_id`) REFERENCES `exam_question_banks` (`id`) ON DELETE CASCADE,
   ADD CONSTRAINT `fk_exam_grade` FOREIGN KEY (`grade_id`) REFERENCES `grades` (`id`) ON DELETE CASCADE;
+
+--
+-- القيود للجدول `exam_attempts`
+--
+ALTER TABLE `exam_attempts`
+  ADD CONSTRAINT `fk_exam_attempt_exam` FOREIGN KEY (`exam_id`) REFERENCES `exams` (`id`) ON DELETE CASCADE,
+  ADD CONSTRAINT `fk_exam_attempt_student` FOREIGN KEY (`student_id`) REFERENCES `students` (`id`) ON DELETE CASCADE;
+
+--
+-- القيود للجدول `exam_attempt_answers`
+--
+ALTER TABLE `exam_attempt_answers`
+  ADD CONSTRAINT `fk_exam_ans_attempt` FOREIGN KEY (`attempt_id`) REFERENCES `exam_attempts` (`id`) ON DELETE CASCADE,
+  ADD CONSTRAINT `fk_exam_ans_choice` FOREIGN KEY (`choice_id`) REFERENCES `exam_question_choices` (`id`) ON DELETE CASCADE,
+  ADD CONSTRAINT `fk_exam_ans_question` FOREIGN KEY (`question_id`) REFERENCES `exam_questions` (`id`) ON DELETE CASCADE;
+
+--
+-- القيود للجدول `exam_attempt_questions`
+--
+ALTER TABLE `exam_attempt_questions`
+  ADD CONSTRAINT `fk_exam_attemptq_attempt` FOREIGN KEY (`attempt_id`) REFERENCES `exam_attempts` (`id`) ON DELETE CASCADE,
+  ADD CONSTRAINT `fk_exam_attemptq_question` FOREIGN KEY (`question_id`) REFERENCES `exam_questions` (`id`) ON DELETE CASCADE;
 
 --
 -- القيود للجدول `exam_questions`

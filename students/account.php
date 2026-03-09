@@ -3,6 +3,7 @@ require __DIR__ . '/../admin/inc/db.php';
 require_once __DIR__ . '/inc/platform_settings.php';
 require __DIR__ . '/inc/student_auth.php';
 require_once __DIR__ . '/../admin/inc/wallet_transactions.php';
+require_once __DIR__ . '/inc/assessments.php';
 
 no_cache_headers();
 student_require_login();
@@ -126,7 +127,7 @@ try {
 
 /* navigation */
 $page = (string)($_GET['page'] ?? 'home');
-$allowedPages = ['home','settings','platform_courses','my_courses','wallet','notifications'];
+$allowedPages = ['home','settings','platform_courses','my_courses','wallet','notifications','assignments','exams'];
 if (!in_array($page, $allowedPages, true)) $page = 'home';
 
 /* sidebar items */
@@ -136,8 +137,8 @@ $sidebar = [
   ['key'=>'platform_courses', 'label'=>'كورسات المنصة', 'icon'=>'📚', 'href'=>'account.php?page=platform_courses'],
   ['key'=>'my_courses', 'label'=>'كورساتك', 'icon'=>'🎓', 'href'=>'account.php?page=my_courses'],
 
-  ['key'=>'assignments', 'label'=>'الواجبات', 'icon'=>'📝', 'href'=>'#', 'disabled'=>true],
-  ['key'=>'exams', 'label'=>'الامتحانات', 'icon'=>'🧠', 'href'=>'#', 'disabled'=>true],
+  ['key'=>'assignments', 'label'=>'الواجبات', 'icon'=>'📝', 'href'=>'account.php?page=assignments'],
+  ['key'=>'exams', 'label'=>'الامتحانات', 'icon'=>'🧠', 'href'=>'account.php?page=exams'],
   ['key'=>'notifications', 'label'=>'اشعارات الطلاب', 'icon'=>'🔔', 'href'=>'account.php?page=notifications'],
   ['key'=>'facebook', 'label'=>'فيسبوك المنصة', 'icon'=>'📘', 'href'=>'#', 'disabled'=>true],
   ['key'=>'chat', 'label'=>'شات', 'icon'=>'💬', 'href'=>'#', 'disabled'=>true],
@@ -501,6 +502,23 @@ try {
   $studentUnreadNotifications = 0;
 }
 
+$assignmentCards = [];
+$examCards = [];
+try {
+  $assignmentCards = student_assessment_fetch_cards($pdo, $studentId, (int)$student['grade_id'], 'assignment');
+} catch (Throwable $e) {
+  $assignmentCards = [];
+}
+
+try {
+  $examCards = student_assessment_fetch_cards($pdo, $studentId, (int)$student['grade_id'], 'exam');
+} catch (Throwable $e) {
+  $examCards = [];
+}
+
+$assignmentSummary = student_assessment_cards_summary($assignmentCards);
+$examSummary = student_assessment_cards_summary($examCards);
+
 /* ✅ NEW: attach last content update per course (lecture/video/pdf created_at) */
 $courseLastUpdateMap = [];
 $allCoursesForMap = array_merge($platformCourses, $myCourses);
@@ -571,6 +589,10 @@ if (!empty($myCourses)) {
 $stats[] = ['label' => 'المحاضرات المتاحة لك', 'value' => $totalLectures, 'icon' => '🧑‍🏫'];
 $stats[] = ['label' => 'الفيديوهات المتاحة لك', 'value' => $totalVideos,   'icon' => '🎥'];
 $stats[] = ['label' => 'ملفات PDF المتاحة لك',  'value' => $totalPdfs,     'icon' => '📑'];
+$stats[] = ['label' => 'الامتحانات المتاحة', 'value' => $examSummary['available_count'], 'icon' => '🧠'];
+$stats[] = ['label' => 'الواجبات المتاحة', 'value' => $assignmentSummary['available_count'], 'icon' => '📝'];
+$stats[] = ['label' => 'إجمالي درجات الامتحانات', 'value' => $examSummary['score_text'], 'icon' => '🏆'];
+$stats[] = ['label' => 'إجمالي درجات الواجبات', 'value' => $assignmentSummary['score_text'], 'icon' => '📊'];
 
 /* ✅ cache-bust for account.css */
 $cssVer = (string)@filemtime(__DIR__ . '/assets/css/account.css');
@@ -650,6 +672,16 @@ if ($cssVer === '' || $cssVer === '0') $cssVer = (string)time();
       .wallet-history__item{flex-direction:column;align-items:flex-start}
       .wallet-history__amount{white-space:normal}
     }
+    .acc-assess-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+    .acc-assess-card{background:var(--card-bg);border:1px solid var(--border);border-radius:18px;padding:16px;box-shadow:0 12px 24px rgba(0,0,0,.06)}
+    .acc-assess-card__head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;flex-wrap:wrap}
+    .acc-assess-card__title{font-size:1.05rem;font-weight:1000}
+    .acc-assess-card__meta{margin-top:12px;display:grid;gap:8px;color:var(--muted);font-weight:900;line-height:1.8}
+    .acc-assess-card__meta span{color:var(--text)}
+    .acc-assess-card__actions{margin-top:14px;display:flex;gap:10px;flex-wrap:wrap}
+    .acc-assess-empty{padding:18px;border:1px dashed var(--border);border-radius:16px;color:var(--muted);font-weight:900;line-height:1.9;background:rgba(0,0,0,.02)}
+    .acc-assess-summary{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+    @media (max-width: 980px){ .acc-assess-grid{grid-template-columns:1fr;} }
   </style>
 
   <title>حساب الطالب - <?php echo h($platformName); ?></title>
@@ -722,6 +754,8 @@ if ($cssVer === '' || $cssVer === '0') $cssVer = (string)time();
           if (($it['key'] ?? '') === 'settings' && $page === 'settings') $isActive = true;
           if (($it['key'] ?? '') === 'platform_courses' && $page === 'platform_courses') $isActive = true;
           if (($it['key'] ?? '') === 'my_courses' && $page === 'my_courses') $isActive = true;
+          if (($it['key'] ?? '') === 'assignments' && $page === 'assignments') $isActive = true;
+          if (($it['key'] ?? '') === 'exams' && $page === 'exams') $isActive = true;
           if (($it['key'] ?? '') === 'notifications' && $page === 'notifications') $isActive = true;
           if (($it['key'] ?? '') === 'wallet' && $page === 'wallet') $isActive = true;
 
@@ -940,6 +974,104 @@ if ($cssVer === '' || $cssVer === '0') $cssVer = (string)time();
                     <div class="acc-course__actions">
                       <a class="acc-btn" href="account_course.php?course_id=<?php echo (int)$c['id']; ?>">▶️ دخول الكورس</a>
                     </div>
+                  </div>
+                </article>
+              <?php endforeach; ?>
+            </div>
+          <?php endif; ?>
+        </section>
+
+      <?php elseif ($page === 'assignments'): ?>
+        <section class="acc-card" aria-label="الواجبات">
+          <div class="acc-card__head">
+            <h2>📝 الواجبات</h2>
+            <p>هنا تظهر الواجبات المضافة للصف الدراسي الخاص بك مع إمكانية البدء أو استكمال الحل أو مراجعة النتيجة لاحقًا.</p>
+          </div>
+
+          <div class="acc-assess-summary">
+            <span class="acc-badge acc-badge--att">🟢 المتاح الآن: <?php echo (int)$assignmentSummary['available_count']; ?></span>
+            <span class="acc-badge acc-badge--buy">📊 إجمالي درجات الواجبات: <?php echo h((string)$assignmentSummary['score_text']); ?></span>
+          </div>
+
+          <?php if (empty($assignmentCards)): ?>
+            <div class="acc-assess-empty">
+              لا توجد واجبات مضافة للصف الدراسي الخاص بك حالياً.
+            </div>
+          <?php else: ?>
+            <div class="acc-assess-grid">
+              <?php foreach ($assignmentCards as $card): ?>
+                <article class="acc-assess-card">
+                  <div class="acc-assess-card__head">
+                    <div>
+                      <div class="acc-assess-card__title">📝 <?php echo h((string)$card['name']); ?></div>
+                      <div class="acc-course__grade">🏫 <?php echo h((string)$card['grade_name']); ?></div>
+                    </div>
+                    <span class="acc-badge <?php echo in_array((string)$card['status_key'], ['submitted','expired'], true) ? 'acc-badge--buy' : 'acc-badge--att'; ?>">
+                      <?php echo h((string)$card['status_icon']); ?> <?php echo h((string)$card['status_label']); ?>
+                    </span>
+                  </div>
+
+                  <div class="acc-assess-card__meta">
+                    <div>🧠 بنك الأسئلة: <span><?php echo h((string)$card['bank_name']); ?></span></div>
+                    <div>⏰ الوقت: <span><?php echo (int)$card['duration_minutes']; ?> دقيقة</span></div>
+                    <div>❓ الأسئلة للطالب: <span><?php echo (int)$card['questions_per_student']; ?> من <?php echo (int)$card['questions_total']; ?></span></div>
+                    <div>🗓️ أضيف بتاريخ: <span><?php echo h((string)$card['created_at']); ?></span></div>
+                    <?php if (!empty($card['attempt_id'])): ?>
+                      <div>🏆 الدرجة: <span><?php echo h((string)$card['score_text']); ?></span></div>
+                    <?php endif; ?>
+                  </div>
+
+                  <div class="acc-assess-card__actions">
+                    <a class="acc-btn" href="<?php echo h((string)$card['href']); ?>"><?php echo h((string)$card['action_label']); ?></a>
+                  </div>
+                </article>
+              <?php endforeach; ?>
+            </div>
+          <?php endif; ?>
+        </section>
+
+      <?php elseif ($page === 'exams'): ?>
+        <section class="acc-card" aria-label="الامتحانات">
+          <div class="acc-card__head">
+            <h2>🧠 الامتحانات</h2>
+            <p>هنا تظهر الامتحانات المضافة للصف الدراسي الخاص بك مع عرض الامتحانات غير المحلولة وإمكانية مراجعة النتيجة في أي وقت.</p>
+          </div>
+
+          <div class="acc-assess-summary">
+            <span class="acc-badge acc-badge--att">🟢 المتاح الآن: <?php echo (int)$examSummary['available_count']; ?></span>
+            <span class="acc-badge acc-badge--buy">🏆 إجمالي درجات الامتحانات: <?php echo h((string)$examSummary['score_text']); ?></span>
+          </div>
+
+          <?php if (empty($examCards)): ?>
+            <div class="acc-assess-empty">
+              لا توجد امتحانات مضافة للصف الدراسي الخاص بك حالياً.
+            </div>
+          <?php else: ?>
+            <div class="acc-assess-grid">
+              <?php foreach ($examCards as $card): ?>
+                <article class="acc-assess-card">
+                  <div class="acc-assess-card__head">
+                    <div>
+                      <div class="acc-assess-card__title">🧠 <?php echo h((string)$card['name']); ?></div>
+                      <div class="acc-course__grade">🏫 <?php echo h((string)$card['grade_name']); ?></div>
+                    </div>
+                    <span class="acc-badge <?php echo in_array((string)$card['status_key'], ['submitted','expired'], true) ? 'acc-badge--buy' : 'acc-badge--att'; ?>">
+                      <?php echo h((string)$card['status_icon']); ?> <?php echo h((string)$card['status_label']); ?>
+                    </span>
+                  </div>
+
+                  <div class="acc-assess-card__meta">
+                    <div>🧠 بنك الأسئلة: <span><?php echo h((string)$card['bank_name']); ?></span></div>
+                    <div>⏰ الوقت: <span><?php echo (int)$card['duration_minutes']; ?> دقيقة</span></div>
+                    <div>❓ الأسئلة للطالب: <span><?php echo (int)$card['questions_per_student']; ?> من <?php echo (int)$card['questions_total']; ?></span></div>
+                    <div>🗓️ أضيف بتاريخ: <span><?php echo h((string)$card['created_at']); ?></span></div>
+                    <?php if (!empty($card['attempt_id'])): ?>
+                      <div>🏆 الدرجة: <span><?php echo h((string)$card['score_text']); ?></span></div>
+                    <?php endif; ?>
+                  </div>
+
+                  <div class="acc-assess-card__actions">
+                    <a class="acc-btn" href="<?php echo h((string)$card['href']); ?>"><?php echo h((string)$card['action_label']); ?></a>
                   </div>
                 </article>
               <?php endforeach; ?>
