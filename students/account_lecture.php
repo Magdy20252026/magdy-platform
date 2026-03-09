@@ -290,17 +290,16 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
       <?php endif; ?>
 
       <div class="buy-row">
-        <button class="acc-modal-btn acc-modal-btn--ghost" type="button" onclick="openRedeemModal('lecture', <?php echo (int)$lectureId; ?>)">🎫 تفعيل كود</button>
-
         <?php if ($isLectureOpen): ?>
           <span class="pill">✅ لديك صلاحية مشاهدة المحاضرة</span>
+        <?php elseif ($isCourseEnrolled): ?>
+          <span class="pill">✅ أنت مشترك في الكورس — جميع المحاضرات مفتوحة</span>
+        <?php elseif ($courseAccessType === 'attendance'): ?>
+          <span class="pill">🏫 هذه المحاضرة بالحضور فقط ولا يمكن شراؤها بالمحفظة أو الكود.</span>
         <?php else: ?>
-          <?php if (!$isCourseEnrolled): ?>
-            <button class="acc-modal-btn acc-modal-btn--primary" type="button"
-              onclick="openBuyLectureModal(<?php echo (int)$lectureId; ?>, '<?php echo h($lecturePriceText); ?>')">🛒 شراء المحاضرة بالمحفظة</button>
-          <?php else: ?>
-            <span class="pill">✅ أنت مشترك في الكورس، يجب أن تكون المحاضرة مفتوحة</span>
-          <?php endif; ?>
+          <button class="acc-modal-btn acc-modal-btn--ghost" type="button" onclick="openRedeemModal('lecture', <?php echo (int)$lectureId; ?>)">🎫 تفعيل كود</button>
+          <button class="acc-modal-btn acc-modal-btn--primary" type="button"
+            onclick="openBuyLectureModal(<?php echo (int)$lectureId; ?>, '<?php echo h($lecturePriceText); ?>')">🛒 شراء المحاضرة بالمحفظة</button>
         <?php endif; ?>
       </div>
     </section>

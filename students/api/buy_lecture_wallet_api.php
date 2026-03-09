@@ -26,13 +26,18 @@ if ($lectureId <= 0) {
 }
 
 try {
-  $stmt = $pdo->prepare("SELECT course_id, price FROM lectures WHERE id=? LIMIT 1");
+  $stmt = $pdo->prepare("SELECT l.course_id, l.price, c.access_type AS course_access_type FROM lectures l INNER JOIN courses c ON c.id = l.course_id WHERE l.id=? LIMIT 1");
   $stmt->execute([$lectureId]);
   $lec = $stmt->fetch(PDO::FETCH_ASSOC);
   if (!$lec) throw new RuntimeException('المحاضرة غير موجودة.');
 
   $courseId = (int)$lec['course_id'];
   $price = (float)($lec['price'] ?? 0);
+
+  if ((string)($lec['course_access_type'] ?? '') === 'attendance') {
+    throw new RuntimeException('هذه المحاضرة بالحضور فقط ولا يمكن شراؤها بالمحفظة.');
+  }
+
   if ($price <= 0) throw new RuntimeException('هذه المحاضرة غير متاحة للشراء بالمحفظة.');
 
   if (student_has_course_access($pdo, $studentId, $courseId)) {

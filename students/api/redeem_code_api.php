@@ -89,9 +89,13 @@ try {
     }
 
     // Verify course exists
-    $stmt = $pdo->prepare("SELECT id FROM courses WHERE id=? LIMIT 1");
+    $stmt = $pdo->prepare("SELECT id, access_type FROM courses WHERE id=? LIMIT 1");
     $stmt->execute([$courseId]);
-    if (!$stmt->fetchColumn()) throw new RuntimeException('الكورس غير موجود.');
+    $courseRow = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$courseRow) throw new RuntimeException('الكورس غير موجود.');
+    if ((string)($courseRow['access_type'] ?? '') === 'attendance') {
+      throw new RuntimeException('هذا الكورس بالحضور فقط ولا يمكن فتحه بالكود.');
+    }
 
     if (student_has_course_access($pdo, $studentId, $courseId)) {
       $pdo->rollBack();
@@ -136,6 +140,14 @@ try {
 
     $courseId = lecture_get_course_id($pdo, $lectureId);
     if ($courseId <= 0) throw new RuntimeException('المحاضرة غير موجودة.');
+
+    // Block attendance courses
+    $stmt = $pdo->prepare("SELECT access_type FROM courses WHERE id=? LIMIT 1");
+    $stmt->execute([$courseId]);
+    $lecCourseAccessType = (string)($stmt->fetchColumn() ?: '');
+    if ($lecCourseAccessType === 'attendance') {
+      throw new RuntimeException('هذه المحاضرة بالحضور فقط ولا يمكن فتحها بالكود.');
+    }
 
     if (student_has_course_access($pdo, $studentId, $courseId)) {
       $pdo->rollBack();
