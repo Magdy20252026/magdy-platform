@@ -121,6 +121,14 @@ if (!$course) {
 /* ✅ NEW: is enrolled in course? => opens all lectures automatically */
 $isEnrolledInCourse = student_has_course_access($pdo, $studentId, $courseId);
 
+/* Redirect online student away from attendance-only courses */
+$studentStatus = (string)($student['status'] ?? 'اونلاين');
+$isOnline = ($studentStatus === 'اونلاين');
+if ($isOnline && (string)($course['access_type'] ?? '') === 'attendance') {
+  header('Location: account.php?page=platform_courses');
+  exit;
+}
+
 /* totals for course */
 $courseLecturesCount = 0;
 $courseVideosCount = 0;
@@ -339,15 +347,14 @@ $effectiveCoursePriceStr = number_format($effectiveCoursePrice, 2);
           <?php endif; ?>
 
           <div class="buy-box">
-            <button class="acc-modal-btn acc-modal-btn--ghost" type="button" onclick="openRedeemModal('course', <?php echo (int)$courseId; ?>)">🎫 تفعيل كود</button>
-
             <?php if ($isEnrolledInCourse): ?>
               <span class="buy-pill">✅ أنت مشترك في هذا الكورس — كل المحاضرات مفتوحة</span>
+            <?php elseif ($accessType === 'attendance'): ?>
+              <span class="buy-pill">ℹ️ هذا الكورس يفتح بالحضور فقط.</span>
             <?php else: ?>
+              <button class="acc-modal-btn acc-modal-btn--ghost" type="button" onclick="openRedeemModal('course', <?php echo (int)$courseId; ?>)">🎫 تفعيل كود</button>
               <?php if ($accessType === 'buy'): ?>
                 <button class="acc-modal-btn acc-modal-btn--primary" type="button" onclick="openBuyCourseModal(<?php echo (int)$courseId; ?>, '<?php echo h($effectiveCoursePriceStr); ?>')">🛒 شراء الكورس بالمحفظة</button>
-              <?php else: ?>
-                <span class="buy-pill">ℹ️ هذا الكورس ليس للبيع بالمحفظة حالياً.</span>
               <?php endif; ?>
             <?php endif; ?>
           </div>
@@ -410,7 +417,7 @@ $effectiveCoursePriceStr = number_format($effectiveCoursePrice, 2);
               <div class="acc-lecture__actions">
                 <a class="acc-btn acc-btn--ghost" href="account_lecture.php?lecture_id=<?php echo $lectureId; ?>">📑 تفاصيل المحاضرة</a>
 
-                <?php if (!$lectureOpen && !$isEnrolledInCourse): ?>
+                <?php if (!$lectureOpen && !$isEnrolledInCourse && $accessType !== 'attendance'): ?>
                   <button class="acc-modal-btn acc-modal-btn--primary" type="button"
                     onclick="openBuyLectureModal(<?php echo (int)$lectureId; ?>, '<?php echo h(to_money($lecturePrice)); ?>')">🛒 شراء المحاضرة بالمحفظة</button>
                   <button class="acc-modal-btn acc-modal-btn--ghost" type="button"

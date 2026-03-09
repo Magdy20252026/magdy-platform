@@ -110,6 +110,8 @@ if (!$student) {
 
 $studentName = (string)($student['full_name'] ?? ($_SESSION['student_name'] ?? ''));
 $wallet = (float)($student['wallet_balance'] ?? 0);
+$studentStatus = (string)($student['status'] ?? 'اونلاين');
+$isOnline = ($studentStatus === 'اونلاين');
 
 /* ✅ Auto-enroll free courses so they appear in "كورساتك" */
 try {
@@ -257,17 +259,32 @@ if (isset($_GET['saved'])) $success = 'تم حفظ بيانات الحساب ب�
    ========================= */
 $platformCourses = [];
 try {
-  $stmt = $pdo->prepare("
-    SELECT
-      c.*,
-      gr.name AS grade_name
-    FROM courses c
-    INNER JOIN grades gr ON gr.id = c.grade_id
-    LEFT JOIN student_course_enrollments e
-      ON e.course_id = c.id AND e.student_id = ?
-    WHERE e.id IS NULL
-    ORDER BY c.id DESC
-  ");
+  if ($isOnline) {
+    $stmt = $pdo->prepare("
+      SELECT
+        c.*,
+        gr.name AS grade_name
+      FROM courses c
+      INNER JOIN grades gr ON gr.id = c.grade_id
+      LEFT JOIN student_course_enrollments e
+        ON e.course_id = c.id AND e.student_id = ?
+      WHERE e.id IS NULL
+        AND c.access_type != 'attendance'
+      ORDER BY c.id DESC
+    ");
+  } else {
+    $stmt = $pdo->prepare("
+      SELECT
+        c.*,
+        gr.name AS grade_name
+      FROM courses c
+      INNER JOIN grades gr ON gr.id = c.grade_id
+      LEFT JOIN student_course_enrollments e
+        ON e.course_id = c.id AND e.student_id = ?
+      WHERE e.id IS NULL
+      ORDER BY c.id DESC
+    ");
+  }
   $stmt->execute([$studentId]);
   $platformCourses = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
 } catch (Throwable $e) {
@@ -547,17 +564,6 @@ if ($cssVer === '' || $cssVer === '0') $cssVer = (string)time();
                 <div class="acc-stat__lbl"><?php echo h((string)$st['label']); ?></div>
               </div>
             <?php endforeach; ?>
-          </div>
-        </section>
-
-        <section class="acc-card" style="margin-top:20px;">
-          <div class="acc-card__head">
-            <h2>⚡ إجراءات سريعة</h2>
-          </div>
-          <div class="acc-actionsRow">
-            <button class="acc-btnx acc-btnx--solid" type="button" onclick="openRedeemModal()">🎫 تفعيل كود</button>
-            <a class="acc-btnx acc-btnx--ghost" href="account.php?page=my_courses">🎓 كورساتك</a>
-            <a class="acc-btnx acc-btnx--ghost" href="account.php?page=platform_courses">📚 كورسات المنصة</a>
           </div>
         </section>
 
