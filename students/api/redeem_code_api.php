@@ -1,4 +1,10 @@
 <?php
+// students/api/redeem_code_api.php
+// ✅ Redeem access codes with support for:
+// 1) access_codes + access_code_redemptions (normal flow)
+// 2) legacy course_codes / lecture_codes WITHOUT inserting into access_codes (avoids CONSTRAINT_1 check failure)
+//    and records usage into legacy_code_redemptions (single-use via is_used)
+
 header('Content-Type: application/json; charset=utf-8');
 
 require __DIR__ . '/../../admin/inc/db.php';
@@ -32,8 +38,14 @@ function date_to_eod(?string $ymd): ?string {
   return $d . ' 23:59:59';
 }
 
+function safeRollback(PDO $pdo): void {
+  if ($pdo->inTransaction()) {
+    $pdo->rollBack();
+  }
+}
+
 function ensure_legacy_redemptions_table(PDO $pdo): void {
-  // Table already created by you, but keep safe in case it isn't present somewhere.
+  // You already created this table, but keep this for safety (no harm)
   $pdo->exec("
     CREATE TABLE IF NOT EXISTS legacy_code_redemptions (
       id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -59,7 +71,9 @@ function legacy_already_used_by_student(PDO $pdo, string $code, int $studentId):
 try {
   $pdo->beginTransaction();
 
-  // 1) Try access_codes first (if you have some non-global codes there)
+  // ------------------------------------------------------------
+  // (1) First try normal access_codes flow (works for codes already there)
+  // ------------------------------------------------------------
   $stmt = $pdo->prepare("
     SELECT id, type, course_id, lecture_id, is_active, max_uses, used_count, expires_at
     FROM access_codes
@@ -97,7 +111,7 @@ try {
 
       if ($isGlobal) {
         if ($targetCourseId <= 0) {
-          $pdo->rollBack();
+          safeRollback($pdo);
           $stmtC = $pdo->prepare("SELECT id, name FROM courses ORDER BY name ASC");
           $stmtC->execute();
           $courses = $stmtC->fetchAll(PDO::FETCH_ASSOC) ?: [];
@@ -120,7 +134,7 @@ try {
       if ($accessType === 'attendance') throw new RuntimeException('هذا الكورس يفتح بالحضور فقط ولا يمكن تفعيله بالكود.');
 
       if (student_has_course_access($pdo, $studentId, $courseId)) {
-        $pdo->rollBack();
+        safeRollback($pdo);
         echo json_encode(['ok' => true, 'already' => true, 'message' => 'أنت بالفعل مشترك في هذا الكورس.', 'course_id' => $courseId], JSON_UNESCAPED_UNICODE);
         exit;
       }
@@ -147,7 +161,7 @@ try {
 
       if ($isGlobal) {
         if ($targetLectureId <= 0) {
-          $pdo->rollBack();
+          safeRollback($pdo);
           echo json_encode([
             'ok'          => false,
             'needs_target'=> true,
@@ -168,7 +182,7 @@ try {
       if ($courseAccessType === 'attendance') throw new RuntimeException('هذه المحاضرة تفتح بالحضور فقط ولا يمكن تفعيلها بالكود.');
 
       if (student_has_lecture_access($pdo, $studentId, $lectureId)) {
-        $pdo->rollBack();
+        safeRollback($pdo);
         echo json_encode(['ok' => true, 'already' => true, 'message' => 'أنت بالفعل لديك صلاحية هذه المحاضرة.', 'lecture_id' => $lectureId], JSON_UNESCAPED_UNICODE);
         exit;
       }
@@ -195,14 +209,18 @@ try {
     throw new RuntimeException('نوع كود غير مدعوم.');
   }
 
-  // 2) Legacy fallback (does NOT write to access_codes to avoid CONSTRAINT_1)
+  // ------------------------------------------------------------
+  // (2) Legacy fallback: course_codes / lecture_codes
+  //     ✅ DOES NOT insert into access_codes (avoids CONSTRAINT_1)
+  //     ✅ Records in legacy_code_redemptions
+  // ------------------------------------------------------------
   ensure_legacy_redemptions_table($pdo);
 
   if (legacy_already_used_by_student($pdo, $code, $studentId)) {
     throw new RuntimeException('أنت استخدمت هذا الكود من قبل.');
   }
 
-  // course_codes
+  // ---- course_codes
   $stmt = $pdo->prepare("SELECT * FROM course_codes WHERE code=? LIMIT 1 FOR UPDATE");
   $stmt->execute([$code]);
   $cc = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -213,12 +231,12 @@ try {
     $expiresAt = date_to_eod($cc['expires_at'] ?? null);
     if ($expiresAt && strtotime($expiresAt) < time()) throw new RuntimeException('انتهت صلاحية هذا الكود.');
 
-    $courseId = ((int)($cc['course_id'] ?? 0));
+    $courseId = (int)($cc['course_id'] ?? 0);
     $isGlobal = ((int)($cc['is_global'] ?? 0) === 1);
 
     if ($isGlobal) {
       if ($targetCourseId <= 0) {
-        $pdo->rollBack();
+        safeRollback($pdo);
         $stmtC = $pdo->prepare("SELECT id, name FROM courses ORDER BY name ASC");
         $stmtC->execute();
         $courses = $stmtC->fetchAll(PDO::FETCH_ASSOC) ?: [];
@@ -243,7 +261,7 @@ try {
     if ($accessType === 'attendance') throw new RuntimeException('هذا الكورس يفتح بالحضور فقط ولا يمكن تفعيله بالكود.');
 
     if (student_has_course_access($pdo, $studentId, $courseId)) {
-      $pdo->rollBack();
+      safeRollback($pdo);
       echo json_encode(['ok' => true, 'already' => true, 'message' => 'أنت بالفعل مشترك في هذا الكورس.', 'course_id' => $courseId], JSON_UNESCAPED_UNICODE);
       exit;
     }
@@ -255,7 +273,7 @@ try {
       ON DUPLICATE KEY UPDATE access_type='code'
     ")->execute([$studentId, $courseId]);
 
-    // record redemption in legacy table
+    // record redemption (legacy)
     $pdo->prepare("
       INSERT INTO legacy_code_redemptions (code, legacy_table, legacy_id, student_id)
       VALUES (?, 'course_codes', ?, ?)
@@ -273,7 +291,7 @@ try {
     exit;
   }
 
-  // lecture_codes
+  // ---- lecture_codes
   $stmt = $pdo->prepare("SELECT * FROM lecture_codes WHERE code=? LIMIT 1 FOR UPDATE");
   $stmt->execute([$code]);
   $lc = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -284,12 +302,12 @@ try {
     $expiresAt = date_to_eod($lc['expires_at'] ?? null);
     if ($expiresAt && strtotime($expiresAt) < time()) throw new RuntimeException('انتهت صلاحية هذا الكود.');
 
-    $lectureId = ((int)($lc['lecture_id'] ?? 0));
+    $lectureId = (int)($lc['lecture_id'] ?? 0);
     $isGlobal  = ((int)($lc['is_global'] ?? 0) === 1);
 
     if ($isGlobal) {
       if ($targetLectureId <= 0) {
-        $pdo->rollBack();
+        safeRollback($pdo);
         echo json_encode([
           'ok'          => false,
           'needs_target'=> true,
@@ -312,7 +330,7 @@ try {
     if ($courseAccessType === 'attendance') throw new RuntimeException('هذه المحاضرة تفتح بالحضور فقط ولا يمكن تفعيلها بالكود.');
 
     if (student_has_lecture_access($pdo, $studentId, $lectureId)) {
-      $pdo->rollBack();
+      safeRollback($pdo);
       echo json_encode(['ok' => true, 'already' => true, 'message' => 'أنت بالفعل لديك صلاحية هذه المحاضرة.', 'lecture_id' => $lectureId], JSON_UNESCAPED_UNICODE);
       exit;
     }
@@ -326,7 +344,7 @@ try {
       ON DUPLICATE KEY UPDATE access_type='code'
     ")->execute([$studentId, $lectureId, $courseId]);
 
-    // record redemption legacy
+    // record redemption (legacy)
     $pdo->prepare("
       INSERT INTO legacy_code_redemptions (code, legacy_table, legacy_id, student_id)
       VALUES (?, 'lecture_codes', ?, ?)
@@ -347,7 +365,7 @@ try {
   throw new RuntimeException('الكود غير صحيح.');
 
 } catch (Throwable $e) {
-  if ($pdo->inTransaction()) $pdo->rollBack();
+  safeRollback($pdo);
   echo json_encode(['ok' => false, 'message' => $e->getMessage()], JSON_UNESCAPED_UNICODE);
   exit;
 }
