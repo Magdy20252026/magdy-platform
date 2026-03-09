@@ -574,12 +574,14 @@ function student_assessment_fetch_attempt_payload(PDO $pdo, string $type, int $a
     $startedAt = trim((string)($attempt['started_at'] ?? ''));
     $durationMinutes = (int)($attempt['duration_minutes'] ?? 0);
     $assessmentDurationMinutes = (int)($attempt['assessment_duration_minutes'] ?? 0);
-    $shouldResetStartedAt = ($attemptStatus === 'in_progress' && strtotime($startedAt) === false);
+    $startedAtTs = strtotime($startedAt);
+    $shouldResetStartedAt = ($attemptStatus === 'in_progress' && ($startedAt === '' || $startedAtTs === false));
     $shouldResetDuration = ($attemptStatus === 'in_progress' && $durationMinutes <= 0 && $assessmentDurationMinutes > 0);
 
     if ($shouldResetStartedAt) {
       $startedAt = date('Y-m-d H:i:s');
       $attempt['started_at'] = $startedAt;
+      $startedAtTs = strtotime($startedAt);
     }
     if ($shouldResetDuration) {
       $durationMinutes = $assessmentDurationMinutes;
@@ -607,11 +609,10 @@ function student_assessment_fetch_attempt_payload(PDO $pdo, string $type, int $a
         ");
         $stmt->execute($params);
       } catch (Throwable $e) {
-        // non-fatal; continue with normalized in-memory values
+        error_log('Failed to persist normalized assessment timing; continuing with in-memory values.');
       }
     }
 
-    $startedAtTs = strtotime($startedAt);
     $remainingSeconds = 0;
     if ($startedAtTs !== false && $durationMinutes > 0) {
       $remainingSeconds = max(0, ($startedAtTs + ($durationMinutes * 60)) - time());
