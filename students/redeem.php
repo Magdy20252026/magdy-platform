@@ -14,9 +14,13 @@ $studentId = (int)($_SESSION['student_id'] ?? 0);
 
 $msg = '';
 $err = '';
+$needsCourseSelect = false;
+$coursesList = [];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   $code = trim((string)($_POST['code'] ?? ''));
+  $targetCourseId  = (int)($_POST['target_course_id'] ?? 0);
+  $targetLectureId = (int)($_POST['target_lecture_id'] ?? 0);
 
   if ($code === '') {
     $err = 'من فضلك أدخل الكود.';
@@ -57,59 +61,90 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
       if ($type === 'course') {
         $courseId = (int)($row['course_id'] ?? 0);
-        if ($courseId <= 0) throw new RuntimeException('الكود غير مرتبط بكورس.');
+        $isGlobal = ($courseId <= 0);
 
-        // If already has course access => do NOT consume code
-        if (student_has_course_access($pdo, $studentId, $courseId)) {
-          $pdo->rollBack();
-          $msg = 'أنت بالفعل مشترك في هذا الكورس.';
-        } else {
-          $stmt = $pdo->prepare("INSERT INTO access_code_redemptions (code_id, student_id) VALUES (?, ?)");
-          $stmt->execute([$codeId, $studentId]);
+        // Global code: needs target_course_id
+        if ($isGlobal) {
+          if ($targetCourseId <= 0) {
+            $pdo->rollBack();
+            $needsCourseSelect = true;
+            $stmtC = $pdo->prepare("SELECT id, name FROM courses ORDER BY name ASC");
+            $stmtC->execute();
+            $coursesList = $stmtC->fetchAll(PDO::FETCH_ASSOC) ?: [];
+          } else {
+            $courseId = $targetCourseId;
+          }
+        }
 
-          $stmt = $pdo->prepare("UPDATE access_codes SET used_count = used_count + 1 WHERE id=?");
-          $stmt->execute([$codeId]);
+        if (!$needsCourseSelect) {
+          $stmt = $pdo->prepare("SELECT id FROM courses WHERE id=? LIMIT 1");
+          $stmt->execute([$courseId]);
+          if (!$stmt->fetchColumn()) throw new RuntimeException('الكورس غير موجود.');
 
-          $stmt = $pdo->prepare("
-            INSERT INTO student_course_enrollments (student_id, course_id, access_type)
-            VALUES (?, ?, 'code')
-            ON DUPLICATE KEY UPDATE access_type='code'
-          ");
-          $stmt->execute([$studentId, $courseId]);
+          if (student_has_course_access($pdo, $studentId, $courseId)) {
+            $pdo->rollBack();
+            $msg = 'أنت بالفعل مشترك في هذا الكورس.';
+          } else {
+            $stmt = $pdo->prepare("INSERT INTO access_code_redemptions (code_id, student_id) VALUES (?, ?)");
+            $stmt->execute([$codeId, $studentId]);
 
-          $pdo->commit();
-          $msg = 'تم تفعيل الكورس بنجاح، وتم فتح جميع محاضراته.';
+            $stmt = $pdo->prepare("UPDATE access_codes SET used_count = used_count + 1 WHERE id=?");
+            $stmt->execute([$codeId]);
+
+            $stmt = $pdo->prepare("
+              INSERT INTO student_course_enrollments (student_id, course_id, access_type)
+              VALUES (?, ?, 'code')
+              ON DUPLICATE KEY UPDATE access_type='code'
+            ");
+            $stmt->execute([$studentId, $courseId]);
+
+            $pdo->commit();
+            $msg = 'تم تفعيل الكورس بنجاح، وتم فتح جميع محاضراته.';
+          }
         }
 
       } elseif ($type === 'lecture') {
         $lectureId = (int)($row['lecture_id'] ?? 0);
-        if ($lectureId <= 0) throw new RuntimeException('الكود غير مرتبط بمحاضرة.');
+        $isGlobal  = ($lectureId <= 0);
+
+        // Global lecture code: needs target_lecture_id
+        if ($isGlobal) {
+          if ($targetLectureId > 0) {
+            $lectureId = $targetLectureId;
+          } else {
+            throw new RuntimeException('هذا الكود عام للمحاضرات — يجب استخدامه من صفحة المحاضرة مباشرة.');
+          }
+        }
 
         $courseId = lecture_get_course_id($pdo, $lectureId);
         if ($courseId <= 0) throw new RuntimeException('المحاضرة غير موجودة.');
 
-        // If already has course access => do NOT consume code
         if (student_has_course_access($pdo, $studentId, $courseId)) {
           $pdo->rollBack();
           $msg = 'أنت مشترك في الكورس بالفعل، كل المحاضرات مفتوحة.';
         } else {
-          $stmt = $pdo->prepare("INSERT INTO access_code_redemptions (code_id, student_id) VALUES (?, ?)");
-          $stmt->execute([$codeId, $studentId]);
+          if (student_has_lecture_access($pdo, $studentId, $lectureId)) {
+            $pdo->rollBack();
+            $msg = 'أنت بالفعل لديك صلاحية هذه المحاضرة.';
+          } else {
+            $stmt = $pdo->prepare("INSERT INTO access_code_redemptions (code_id, student_id) VALUES (?, ?)");
+            $stmt->execute([$codeId, $studentId]);
 
-          $stmt = $pdo->prepare("UPDATE access_codes SET used_count = used_count + 1 WHERE id=?");
-          $stmt->execute([$codeId]);
+            $stmt = $pdo->prepare("UPDATE access_codes SET used_count = used_count + 1 WHERE id=?");
+            $stmt->execute([$codeId]);
 
-          $stmt = $pdo->prepare("
-            INSERT INTO student_lecture_enrollments
-              (student_id, lecture_id, course_id, access_type, paid_amount, lecture_code_id)
-            VALUES
-              (?, ?, ?, 'code', NULL, ?)
-            ON DUPLICATE KEY UPDATE access_type='code', lecture_code_id=VALUES(lecture_code_id)
-          ");
-          $stmt->execute([$studentId, $lectureId, $courseId, $codeId]);
+            $stmt = $pdo->prepare("
+              INSERT INTO student_lecture_enrollments
+                (student_id, lecture_id, course_id, access_type, paid_amount, lecture_code_id)
+              VALUES
+                (?, ?, ?, 'code', NULL, ?)
+              ON DUPLICATE KEY UPDATE access_type='code', lecture_code_id=VALUES(lecture_code_id)
+            ");
+            $stmt->execute([$studentId, $lectureId, $courseId, $codeId]);
 
-          $pdo->commit();
-          $msg = 'تم تفعيل المحاضرة بنجاح.';
+            $pdo->commit();
+            $msg = 'تم تفعيل المحاضرة بنجاح.';
+          }
         }
 
       } else {
@@ -145,11 +180,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   <?php if ($msg): ?><div class="box ok"><?php echo h($msg); ?></div><?php endif; ?>
   <?php if ($err): ?><div class="box bad"><?php echo h($err); ?></div><?php endif; ?>
 
-  <form method="post" class="box">
-    <label>أدخل كود الاشتراك:</label>
-    <input name="code" required placeholder="مثال: ABC123...">
-    <button type="submit">تفعيل</button>
-  </form>
+  <?php if ($needsCourseSelect && !empty($coursesList)): ?>
+    <div class="box" style="background:#fff8e1;border-color:#f0c040;">
+      <p>🎓 هذا الكود عام — اختر الكورس الذي تريد فتحه:</p>
+      <form method="post" class="box" style="margin:0">
+        <input type="hidden" name="code" value="<?php echo h((string)($_POST['code'] ?? '')); ?>">
+        <select name="target_course_id" required style="padding:10px;border:1px solid #ccc;border-radius:10px;width:100%;margin-bottom:8px;font-size:1em;">
+          <option value="">-- اختر الكورس --</option>
+          <?php foreach ($coursesList as $cv): ?>
+            <option value="<?php echo (int)$cv['id']; ?>"><?php echo h((string)$cv['name']); ?></option>
+          <?php endforeach; ?>
+        </select>
+        <button type="submit">✅ تفعيل الكورس</button>
+      </form>
+    </div>
+  <?php elseif (!$msg): ?>
+    <form method="post" class="box">
+      <label>أدخل كود الاشتراك:</label>
+      <input name="code" required placeholder="مثال: XXXX-XXXX-XXXX" value="<?php echo h((string)($_POST['code'] ?? '')); ?>">
+      <button type="submit">تفعيل</button>
+    </form>
+  <?php else: ?>
+    <form method="post" class="box">
+      <label>تفعيل كود آخر:</label>
+      <input name="code" required placeholder="مثال: XXXX-XXXX-XXXX">
+      <button type="submit">تفعيل</button>
+    </form>
+  <?php endif; ?>
 
   <p><a href="account.php">⬅️ رجوع للحساب</a></p>
 </body>

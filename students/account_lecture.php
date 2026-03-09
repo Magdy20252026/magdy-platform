@@ -207,6 +207,9 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
     .buy-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
     .buy-row form{display:inline}
     .pill{padding:10px 12px;border:1px solid #ddd;border-radius:14px;font-weight:900}
+    .acc-modal-btn{display:inline-flex;align-items:center;gap:6px;padding:10px 14px;border:none;border-radius:12px;font-weight:700;cursor:pointer;font-family:inherit;font-size:1em}
+    .acc-modal-btn--primary{background:#111;color:#fff}
+    .acc-modal-btn--ghost{background:transparent;border:2px solid #111;color:#111}
   </style>
 
   <title>تفاصيل المحاضرة - <?php echo h((string)$lecture['name']); ?></title>
@@ -287,16 +290,14 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
       <?php endif; ?>
 
       <div class="buy-row">
-        <a class="acc-btn acc-btn--ghost" href="redeem.php">🎫 تفعيل كود</a>
+        <button class="acc-modal-btn acc-modal-btn--ghost" type="button" onclick="openRedeemModal('lecture', <?php echo (int)$lectureId; ?>)">🎫 تفعيل كود</button>
 
         <?php if ($isLectureOpen): ?>
           <span class="pill">✅ لديك صلاحية مشاهدة المحاضرة</span>
         <?php else: ?>
           <?php if (!$isCourseEnrolled): ?>
-            <form method="post" action="buy_lecture_wallet.php">
-              <input type="hidden" name="lecture_id" value="<?php echo (int)$lectureId; ?>">
-              <button class="acc-btn" type="submit">🛒 شراء المحاضرة بالمحفظة</button>
-            </form>
+            <button class="acc-modal-btn acc-modal-btn--primary" type="button"
+              onclick="openBuyLectureModal(<?php echo (int)$lectureId; ?>, '<?php echo h($lecturePriceText); ?>')">🛒 شراء المحاضرة بالمحفظة</button>
           <?php else: ?>
             <span class="pill">✅ أنت مشترك في الكورس، يجب أن تكون المحاضرة مفتوحة</span>
           <?php endif; ?>
@@ -425,5 +426,143 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
 <?php endif; ?>
 
 <script src="assets/js/theme.js"></script>
+
+<!-- ✅ Purchase / Code Modals (same as account_course.php) -->
+<div id="accModalBackdrop" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.55);align-items:center;justify-content:center;" role="dialog" aria-modal="true">
+  <div id="accModalBox" style="background:var(--card-bg,#fff);border-radius:18px;padding:28px 24px;max-width:420px;width:calc(100% - 32px);box-shadow:0 8px 40px rgba(0,0,0,.25);position:relative;font-family:inherit;">
+    <button id="accModalClose" style="position:absolute;top:12px;left:12px;background:none;border:none;font-size:1.4em;cursor:pointer;color:var(--muted,#888);" aria-label="إغلاق">✖</button>
+    <h3 id="accModalTitle" style="margin:0 0 14px;font-size:1.2em;"></h3>
+    <div id="accModalMsg" style="display:none;padding:10px 14px;border-radius:10px;margin-bottom:12px;font-weight:700;"></div>
+    <div id="accModalBody"></div>
+  </div>
+</div>
+
+<script>
+(function(){
+  var backdrop = document.getElementById('accModalBackdrop');
+  var titleEl  = document.getElementById('accModalTitle');
+  var msgEl    = document.getElementById('accModalMsg');
+  var bodyEl   = document.getElementById('accModalBody');
+  var closeBtn = document.getElementById('accModalClose');
+
+  function openModal(title, bodyHtml) {
+    titleEl.textContent = title;
+    bodyEl.innerHTML = bodyHtml;
+    msgEl.style.display = 'none';
+    backdrop.style.display = 'flex';
+  }
+  function closeModal() { backdrop.style.display = 'none'; }
+  function showMsg(text, ok) {
+    msgEl.textContent = text;
+    msgEl.style.display = 'block';
+    msgEl.style.background = ok ? '#e9ffe9' : '#ffe9e9';
+    msgEl.style.border = '1px solid ' + (ok ? '#8ad08a' : '#d08a8a');
+    msgEl.style.color = ok ? '#1a6a1a' : '#a00';
+  }
+  function setLoading(btn, loading) {
+    btn.disabled = loading;
+    if (loading) { btn._orig = btn.textContent; btn.textContent = '⏳ جاري التنفيذ...'; }
+    else { btn.textContent = btn._orig || btn.textContent; }
+  }
+
+  closeBtn.addEventListener('click', closeModal);
+  backdrop.addEventListener('click', function(e){ if(e.target===backdrop) closeModal(); });
+  document.addEventListener('keydown', function(e){ if(e.key==='Escape' && backdrop.style.display!=='none') closeModal(); });
+
+  function updateWalletPill(newBalance) {
+    var pill = document.querySelector('.acc-pill span:last-child');
+    if (pill) pill.textContent = parseFloat(newBalance).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',') + ' جنيه';
+  }
+
+  var _redeemType = null, _redeemContextId = 0, _redeemLastCode = '';
+
+  window.openRedeemModal = function(type, contextId) {
+    _redeemType = type || null;
+    _redeemContextId = parseInt(contextId) || 0;
+    _redeemLastCode = '';
+    openModal('🎫 تفعيل كود اشتراك',
+      '<input id="rCodeIn" type="text" placeholder="XXXX-XXXX-XXXX" dir="ltr" style="width:100%;padding:12px;border:1px solid #ccc;border-radius:12px;font-size:1em;box-sizing:border-box;margin-bottom:10px;font-family:inherit;">' +
+      '<button id="rCodeBtn" onclick="doRedeemCode()" style="width:100%;padding:12px;border:none;border-radius:12px;background:#111;color:#fff;font-size:1em;font-weight:700;cursor:pointer;font-family:inherit;">✅ تفعيل</button>'
+    );
+    setTimeout(function(){ var i=document.getElementById('rCodeIn'); if(i) i.focus(); }, 80);
+  };
+
+  window.doRedeemCode = async function() {
+    var codeIn = document.getElementById('rCodeIn');
+    var btn    = document.getElementById('rCodeBtn');
+    var code   = (codeIn ? codeIn.value.trim() : '');
+    if (!code) { showMsg('من فضلك أدخل الكود.', false); return; }
+    _redeemLastCode = code;
+    setLoading(btn, true);
+    try {
+      var fd = new FormData();
+      fd.append('code', code);
+      if (_redeemType === 'course' && _redeemContextId > 0) fd.append('target_course_id', _redeemContextId);
+      if (_redeemType === 'lecture' && _redeemContextId > 0) fd.append('target_lecture_id', _redeemContextId);
+      var res  = await fetch('api/redeem_code_api.php', {method:'POST', body:fd});
+      var data = await res.json();
+      setLoading(btn, false);
+      if (data.needs_target && data.target_type === 'course') {
+        var opts = '<option value="">-- اختر الكورس --</option>';
+        (data.courses || []).forEach(function(c){ opts += '<option value="' + c.id + '">' + c.name + '</option>'; });
+        bodyEl.innerHTML =
+          '<p style="margin:0 0 8px;font-weight:700;color:#b06000;">🎓 هذا الكود عام — اختر الكورس:</p>' +
+          '<select id="rCourseIn" style="width:100%;padding:12px;border:1px solid #ccc;border-radius:12px;font-size:1em;box-sizing:border-box;margin-bottom:10px;font-family:inherit;">' + opts + '</select>' +
+          '<button id="rCourseBtn" onclick="doRedeemWithCourse()" style="width:100%;padding:12px;border:none;border-radius:12px;background:#1a7a2a;color:#fff;font-size:1em;font-weight:700;cursor:pointer;font-family:inherit;">✅ تفعيل</button>';
+        showMsg(data.message || 'اختر الكورس.', false);
+      } else if (data.ok) {
+        showMsg('✅ ' + (data.message||'تم التفعيل بنجاح.'), true);
+        setTimeout(function(){ closeModal(); location.reload(); }, 1800);
+      } else {
+        showMsg('❌ ' + (data.message||'حدث خطأ.'), false);
+      }
+    } catch(e) { setLoading(btn, false); showMsg('❌ خطأ في الاتصال.', false); }
+  };
+
+  window.doRedeemWithCourse = async function() {
+    var sel = document.getElementById('rCourseIn');
+    var btn = document.getElementById('rCourseBtn');
+    if (!sel || !sel.value) { showMsg('من فضلك اختر كورساً.', false); return; }
+    setLoading(btn, true);
+    try {
+      var fd = new FormData();
+      fd.append('code', _redeemLastCode);
+      fd.append('target_course_id', sel.value);
+      var res  = await fetch('api/redeem_code_api.php', {method:'POST', body:fd});
+      var data = await res.json();
+      setLoading(btn, false);
+      if (data.ok) { showMsg('✅ ' + (data.message||'تم.'), true); setTimeout(function(){ closeModal(); location.reload(); }, 1800); }
+      else showMsg('❌ ' + (data.message||'حدث خطأ.'), false);
+    } catch(e) { setLoading(btn, false); showMsg('❌ خطأ في الاتصال.', false); }
+  };
+
+  window.openBuyLectureModal = function(lectureId, priceText) {
+    openModal('🛒 شراء المحاضرة بالمحفظة',
+      '<p style="margin:0 0 10px;font-weight:700;">💰 السعر: <b>' + priceText + '</b></p>' +
+      '<p style="margin:0 0 14px;color:var(--muted,#666);font-size:.95em;">سيتم خصم المبلغ من رصيد محفظتك.</p>' +
+      '<button id="buyLectureBtn" onclick="doBuyLecture(' + parseInt(lectureId) + ')" style="width:100%;padding:12px;border:none;border-radius:12px;background:#111;color:#fff;font-size:1em;font-weight:700;cursor:pointer;font-family:inherit;">✅ تأكيد الشراء</button>'
+    );
+  };
+
+  window.doBuyLecture = async function(lectureId) {
+    var btn = document.getElementById('buyLectureBtn');
+    setLoading(btn, true);
+    try {
+      var fd = new FormData(); fd.append('lecture_id', lectureId);
+      var res  = await fetch('api/buy_lecture_wallet_api.php', {method:'POST', body:fd});
+      var data = await res.json();
+      setLoading(btn, false);
+      if (data.ok) {
+        if (data.new_balance !== undefined) updateWalletPill(data.new_balance);
+        showMsg('✅ ' + (data.message||'تم الشراء بنجاح.'), true);
+        setTimeout(function(){ closeModal(); location.reload(); }, 1800);
+      } else {
+        showMsg('❌ ' + (data.message||'حدث خطأ.'), false);
+      }
+    } catch(e) { setLoading(btn, false); showMsg('❌ خطأ في الاتصال.', false); }
+  };
+})();
+</script>
+
 </body>
 </html>
