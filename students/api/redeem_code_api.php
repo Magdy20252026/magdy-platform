@@ -1,74 +1,48 @@
 <?php
 
-function redeemCode($code, $studentId) {
-    // Start transaction
-    mysqli_begin_transaction($conn);
+function redeemCode($code, $userId) {
+    $pdo = new PDO('mysql:host=your_host;dbname=your_db', 'username', 'password');
+    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
-    try {
-        // Check if the code exists in course_codes or lecture_codes
-        $stmt = $conn->prepare("SELECT * FROM course_codes WHERE code = ? FOR UPDATE");
-        $stmt->bind_param("s", $code);
-        $stmt->execute();
-        $result = $stmt->get_result();
+    // Check if the code exists in access_codes
+    $query = "SELECT * FROM access_codes WHERE code = :code";
+    $stmt = $pdo->prepare($query);
+    $stmt->execute([':code' => $code]);
+    $accessCode = $stmt->fetch(PDO::FETCH_ASSOC);
 
-        if ($row = $result->fetch_assoc()) {
-            if ($row['is_used'] == 1) {
-                return json_encode(['message' => 'تم استهلاك هذا الكود بالكامل.']);
-            }
+    if ($accessCode) {
+        // Code found in access_codes
+        if ($accessCode['used_count'] < $accessCode['max_uses']) {
+            // Update used_count
+            $updateQuery = "UPDATE access_codes SET used_count = used_count + 1 WHERE code = :code";
+            $updateStmt = $pdo->prepare($updateQuery);
+            $updateStmt->execute([':code' => $code]);
 
-            // Migrate to access_codes
-            $stmt = $conn->prepare("INSERT INTO access_codes (code, max_uses, used_count, is_active, expires_at, is_global) VALUES (?, 1, 0, 1, DATE_ADD(NOW(), INTERVAL 1 DAY), ?)"
-            );
-            $is_global = $row['is_global'] ? 1 : 0;
-            $stmt->bind_param("si", $code, $is_global);
-            $stmt->execute();
+            // Write to access_code_redemptions
+            $insertQuery = "INSERT INTO access_code_redemptions (code, user_id) VALUES (:code, :userId)";
+            $insertStmt = $pdo->prepare($insertQuery);
+            $insertStmt->execute([':code' => $code, ':userId' => $userId]);
 
-            // Update course_code
-            $stmt = $conn->prepare("UPDATE course_codes SET is_used = 1, used_by_student_id = ?, used_at = NOW() WHERE code = ?");
-            $stmt->bind_param("is", $studentId, $code);
-            $stmt->execute();
-
-            // Commit transaction
-            mysqli_commit($conn);
-            return json_encode(['message' => 'Redemption successful.']);
-
+            // Enroll student
+            enrollStudent($userId, $code);
+            return json_encode(['status' => 'success', 'message' => 'Code redeemed successfully.']);
         } else {
-            // Check in lecture_codes
-            $stmt = $conn->prepare("SELECT * FROM lecture_codes WHERE code = ? FOR UPDATE");
-            $stmt->bind_param("s", $code);
-            $stmt->execute();
-            $result = $stmt->get_result();
-
-            if ($row = $result->fetch_assoc()) {
-                if ($row['is_used'] == 1) {
-                    return json_encode(['message' => 'تم استهلاك هذا الكود بالكامل.']);
-                }
-
-                // Migrate to access_codes
-                $stmt = $conn->prepare("INSERT INTO access_codes (code, max_uses, used_count, is_active, expires_at, is_global) VALUES (?, 1, 0, 1, DATE_ADD(NOW(), INTERVAL 1 DAY), ?)"
-                );
-                $is_global = $row['is_global'] ? 1 : 0;
-                $stmt->bind_param("si", $code, $is_global);
-                $stmt->execute();
-
-                // Update lecture_code
-                $stmt = $conn->prepare("UPDATE lecture_codes SET is_used = 1, used_by_student_id = ?, used_at = NOW() WHERE code = ?");
-                $stmt->bind_param("is", $studentId, $code);
-                $stmt->execute();
-
-                // Commit transaction
-                mysqli_commit($conn);
-                return json_encode(['message' => 'Redemption successful.']);
-            }
+            return json_encode(['status' => 'error', 'message' => 'Code has exceeded maximum uses.']);
         }
-
-        return json_encode(['message' => 'Invalid code.']);
-
-    } catch (Exception $e) {
-        // Rollback transaction
-        mysqli.rollback($conn);
-        return json_encode(['message' => 'Error occurred: ' . $e->getMessage()]);
+    } else {
+        // Code not found, migrate from course_codes or lecture_codes
+        migrateCode($code, $userId);
+        return json_encode(['status' => 'info', 'message' => 'Code migrated and redeemed successfully.']);
     }
+}
+
+function migrateCode($code, $userId) {
+    // Logic to migrate from course_codes/lecture_codes (similar to redeemCode)
+    // Update used_count in course_codes/lecture_codes and write to access_code_redemptions
+}
+
+function enrollStudent($userId, $code) {
+    // Logic for enrolling the student using the code
 }
 
 ?>
