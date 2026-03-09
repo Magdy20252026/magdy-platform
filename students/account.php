@@ -31,7 +31,7 @@ function fmt_dt(?string $dt): string {
 
 /* محافظات مصر */
 $governorates = [
-  'القاهرة','الجيزة','الإسكندر��ة','الدقهلية','البحر الأحمر','��لبحيرة','الفيوم','الغربية',
+  'القاهرة','الجيزة','الإسكندرية','الدقهلية','البحر الأحمر','البحيرة','الفيوم','الغربية',
   'الإسماعيلية','المنوفية','المنيا','القليوبية','الوادي الجديد','السويس','اسوان','اسيوط',
   'بني سويف','بورسعيد','دمياط','الشرقية','جنوب سيناء','كفر الشيخ','مطروح','الأقصر',
   'قنا','شمال سيناء','سوهاج'
@@ -113,7 +113,7 @@ $wallet = (float)($student['wallet_balance'] ?? 0);
 
 /* navigation */
 $page = (string)($_GET['page'] ?? 'home');
-$allowedPages = ['home','settings','platform_courses'];
+$allowedPages = ['home','settings','platform_courses','my_courses'];
 if (!in_array($page, $allowedPages, true)) $page = 'home';
 
 /* sidebar items */
@@ -121,7 +121,8 @@ $sidebar = [
   ['key'=>'home', 'label'=>'الصفحه الرئيسية', 'icon'=>'🏠', 'href'=>'account.php?page=home'],
 
   ['key'=>'platform_courses', 'label'=>'كورسات المنصة', 'icon'=>'📚', 'href'=>'account.php?page=platform_courses'],
-  ['key'=>'my_courses', 'label'=>'كورساتك', 'icon'=>'🎓', 'href'=>'#', 'disabled'=>true],
+  ['key'=>'my_courses', 'label'=>'كورساتك', 'icon'=>'🎓', 'href'=>'account.php?page=my_courses'],
+
   ['key'=>'assignments', 'label'=>'الواجبات', 'icon'=>'📝', 'href'=>'#', 'disabled'=>true],
   ['key'=>'exams', 'label'=>'الامتحانات', 'icon'=>'🧠', 'href'=>'#', 'disabled'=>true],
   ['key'=>'notifications', 'label'=>'اشعارات الطلاب', 'icon'=>'🔔', 'href'=>'#', 'disabled'=>true],
@@ -275,10 +276,35 @@ try {
   $platformCourses = [];
 }
 
+/* =========================
+   ✅ My courses (enrolled)
+   ========================= */
+$myCourses = [];
+try {
+  $stmt = $pdo->prepare("
+    SELECT
+      c.*,
+      gr.name AS grade_name,
+      e.access_type AS enroll_access_type,
+      e.created_at AS enrolled_at
+    FROM student_course_enrollments e
+    INNER JOIN courses c ON c.id = e.course_id
+    INNER JOIN grades gr ON gr.id = c.grade_id
+    WHERE e.student_id = ?
+    ORDER BY e.id DESC
+  ");
+  $stmt->execute([$studentId]);
+  $myCourses = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+} catch (Throwable $e) {
+  $myCourses = [];
+}
+
 /* ✅ NEW: attach last content update per course (lecture/video/pdf created_at) */
 $courseLastUpdateMap = [];
-if (!empty($platformCourses)) {
-  $courseIds = array_values(array_unique(array_map(fn($c) => (int)($c['id'] ?? 0), $platformCourses)));
+$allCoursesForMap = array_merge($platformCourses, $myCourses);
+
+if (!empty($allCoursesForMap)) {
+  $courseIds = array_values(array_unique(array_map(fn($c) => (int)($c['id'] ?? 0), $allCoursesForMap)));
   $courseIds = array_values(array_filter($courseIds, fn($id) => $id > 0));
 
   if (!empty($courseIds)) {
@@ -355,6 +381,10 @@ if ($cssVer === '' || $cssVer === '0') $cssVer = (string)time();
       .acc-stats__grid{ grid-template-columns: 1fr !important; }
       .acc-brand__name{ display:none !important; }
     }
+    .acc-actionsRow{display:flex;gap:10px;flex-wrap:wrap;margin:10px 0}
+    .acc-btnx{display:inline-flex;align-items:center;gap:8px;padding:10px 14px;border-radius:12px;font-weight:900;text-decoration:none}
+    .acc-btnx--solid{background:#111;color:#fff}
+    .acc-btnx--ghost{background:transparent;border:2px solid #111;color:#111}
   </style>
 
   <title>حساب الطالب - <?php echo h($platformName); ?></title>
@@ -426,6 +456,7 @@ if ($cssVer === '' || $cssVer === '0') $cssVer = (string)time();
           if (($it['key'] ?? '') === 'home' && $page === 'home') $isActive = true;
           if (($it['key'] ?? '') === 'settings' && $page === 'settings') $isActive = true;
           if (($it['key'] ?? '') === 'platform_courses' && $page === 'platform_courses') $isActive = true;
+          if (($it['key'] ?? '') === 'my_courses' && $page === 'my_courses') $isActive = true;
 
           $cls = 'acc-nav__item';
           if ($isActive) $cls .= ' is-active';
@@ -463,25 +494,17 @@ if ($cssVer === '' || $cssVer === '0') $cssVer = (string)time();
         <section class="acc-hero">
           <h1>👋 أهلاً <?php echo h($studentName); ?></h1>
         </section>
-        <section class="acc-stats" aria-label="إحصائيات">
-          <div class="acc-stats__grid">
-            <?php foreach ($stats as $st): ?>
-              <div class="acc-stat">
-                <div class="acc-stat__meta">
-                  <div class="acc-stat__val"><?php echo h((string)$st['value']); ?></div>
-                  <div class="acc-stat__lbl"><?php echo h((string)$st['label']); ?></div>
-                </div>
-                <div class="acc-stat__ico" aria-hidden="true"><?php echo h((string)$st['icon']); ?></div>
-              </div>
-            <?php endforeach; ?>
-          </div>
-        </section>
 
       <?php elseif ($page === 'platform_courses'): ?>
         <section class="acc-card" aria-label="كورسات المنصة">
           <div class="acc-card__head">
             <h2>📚 كورسات المنصة</h2>
             <p>هنا تظهر الكورسات التي لست مشتركًا فيها.</p>
+
+            <div class="acc-actionsRow">
+              <a class="acc-btnx acc-btnx--solid" href="redeem.php">🎫 تفعيل كود</a>
+              <a class="acc-btnx acc-btnx--ghost" href="account.php?page=my_courses">🎓 كورساتك</a>
+            </div>
           </div>
 
           <?php if (empty($platformCourses)): ?>
@@ -508,10 +531,6 @@ if ($cssVer === '' || $cssVer === '0') $cssVer = (string)time();
                   if ($imgDb !== '') $imgUrl = '../admin/' . ltrim($imgDb, '/');
 
                   $details = trim((string)($c['details'] ?? ''));
-                  $createdAt = fmt_dt((string)($c['created_at'] ?? ''));
-                  $updatedAt = isset($c['updated_at']) ? fmt_dt((string)($c['updated_at'] ?? '')) : '';
-
-                  /* ✅ NEW: last update inside this course (lecture/video/pdf) */
                   $courseLast = (string)($courseLastUpdateMap[(int)$c['id']] ?? '');
                 ?>
 
@@ -539,11 +558,6 @@ if ($cssVer === '' || $cssVer === '0') $cssVer = (string)time();
                     </div>
 
                     <div class="acc-course__meta">
-                      <?php if ($createdAt !== ''): ?>
-                        <div class="acc-metaRow">🗓️ تاريخ الإضافة: <span><?php echo h($createdAt); ?></span></div>
-                      <?php endif; ?>
-                        
-                      <!-- ✅ NEW ROW -->
                       <div class="acc-metaRow">
                         🧩 آخر تحديث داخل الكورس:
                         <span><?php echo h($courseLast !== '' ? $courseLast : 'لا يوجد محتوى بعد'); ?></span>
@@ -553,7 +567,6 @@ if ($cssVer === '' || $cssVer === '0') $cssVer = (string)time();
                     <div class="acc-course__pricing">
                       <?php if ($isFree): ?>
                         <span class="acc-badge acc-badge--free">🆓 مجاني</span>
-
                       <?php elseif ($isBuy): ?>
                         <span class="acc-badge acc-badge--buy">🛒 شراء</span>
 
@@ -583,7 +596,78 @@ if ($cssVer === '' || $cssVer === '0') $cssVer = (string)time();
 
                     <div class="acc-course__actions">
                       <a class="acc-btn acc-btn--ghost" href="account_course.php?course_id=<?php echo (int)$c['id']; ?>">📑 تفاصيل الكورس</a>
-                      <button class="acc-btn" type="button" disabled title="يبرمج لاحقًا">🛒 شراء الكورس</button>
+                      <a class="acc-btn" href="account_course.php?course_id=<?php echo (int)$c['id']; ?>">🛒 شراء / تفعيل</a>
+                    </div>
+                  </div>
+                </article>
+              <?php endforeach; ?>
+            </div>
+          <?php endif; ?>
+        </section>
+
+      <?php elseif ($page === 'my_courses'): ?>
+        <section class="acc-card" aria-label="كورساتك">
+          <div class="acc-card__head">
+            <h2>🎓 كورساتك</h2>
+            <p>هنا تظهر الكورسات التي أنت مشترك فيها.</p>
+
+            <div class="acc-actionsRow">
+              <a class="acc-btnx acc-btnx--solid" href="redeem.php">🎫 تفعيل كود</a>
+              <a class="acc-btnx acc-btnx--ghost" href="account.php?page=platform_courses">📚 كورسات المنصة</a>
+            </div>
+          </div>
+
+          <?php if (empty($myCourses)): ?>
+            <div style="font-weight:900;color:var(--muted);line-height:1.9;">
+              أنت غير مشترك في أي كورس حتى الآن.
+            </div>
+          <?php else: ?>
+            <div class="acc-courses-grid">
+              <?php foreach ($myCourses as $c): ?>
+                <?php
+                  $imgDb = trim((string)($c['image_path'] ?? ''));
+                  $imgUrl = null;
+                  if ($imgDb !== '') $imgUrl = '../admin/' . ltrim($imgDb, '/');
+
+                  $details = trim((string)($c['details'] ?? ''));
+                  $courseLast = (string)($courseLastUpdateMap[(int)$c['id']] ?? '');
+                  $enrollType = (string)($c['enroll_access_type'] ?? '');
+                  $enrolledAt = (string)($c['enrolled_at'] ?? '');
+                ?>
+
+                <article class="acc-course">
+                  <div class="acc-course__cover">
+                    <?php if ($imgUrl): ?>
+                      <img class="acc-course__img" src="<?php echo h($imgUrl); ?>" alt="<?php echo h((string)$c['name']); ?>">
+                    <?php else: ?>
+                      <div class="acc-course__imgFallback">🎓</div>
+                    <?php endif; ?>
+                  </div>
+
+                  <div class="acc-course__body">
+                    <div class="acc-course__head">
+                      <div class="acc-course__title"><?php echo h((string)$c['name']); ?></div>
+                      <div class="acc-course__grade">🏫 <?php echo h((string)$c['grade_name']); ?></div>
+                    </div>
+
+                    <div class="acc-course__meta">
+                      <div class="acc-metaRow">✅ نوع الاشتراك: <b><?php echo h($enrollType); ?></b></div>
+                      <?php if ($enrolledAt !== ''): ?>
+                        <div class="acc-metaRow">🗓️ تاريخ الاشتراك: <span><?php echo h($enrolledAt); ?></span></div>
+                      <?php endif; ?>
+                      <div class="acc-metaRow">🧩 آخر تحديث داخل الكورس: <span><?php echo h($courseLast !== '' ? $courseLast : '—'); ?></span></div>
+                    </div>
+
+                    <div class="acc-course__details">
+                      <?php if ($details !== ''): ?>
+                        <?php echo nl2br(h($details)); ?>
+                      <?php else: ?>
+                        <span style="color:var(--muted);font-weight:900;">بدون تفاصيل.</span>
+                      <?php endif; ?>
+                    </div>
+
+                    <div class="acc-course__actions">
+                      <a class="acc-btn" href="account_course.php?course_id=<?php echo (int)$c['id']; ?>">▶️ دخول الكورس</a>
                     </div>
                   </div>
                 </article>
@@ -593,11 +677,11 @@ if ($cssVer === '' || $cssVer === '0') $cssVer = (string)time();
         </section>
 
       <?php elseif ($page === 'settings'): ?>
-        <!-- (باقي صفحة الإعدادات كما هي بدون تغيير) -->
+        <!-- settings unchanged -->
         <section class="acc-card" aria-label="إعدادات الحساب">
           <div class="acc-card__head">
-            <h2>⚙��� إعدادات الحساب</h2>
-            <p>يمكنك تعديل بياناتك ه��ا.</p>
+            <h2>⚙️ إعدادات الحساب</h2>
+            <p>يمكنك تعديل بياناتك هنا.</p>
           </div>
 
           <form method="post" class="acc-form" autocomplete="off">
@@ -605,7 +689,7 @@ if ($cssVer === '' || $cssVer === '0') $cssVer = (string)time();
 
             <div class="acc-grid">
               <label class="acc-field">
-                <span class="acc-label">اسم الطال��</span>
+                <span class="acc-label">اسم الطالب</span>
                 <input class="acc-input" name="full_name" required value="<?php echo h((string)$student['full_name']); ?>" placeholder="مثال: محمد أحمد علي">
               </label>
 
@@ -735,8 +819,6 @@ if ($cssVer === '' || $cssVer === '0') $cssVer = (string)time();
 <?php endif; ?>
 
 <script src="assets/js/theme.js"></script>
-
-<!-- (باقي JS كما هو بدون تغيير) -->
 <script>
 (function(){
   const burger = document.getElementById('accBurger');

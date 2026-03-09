@@ -2,6 +2,7 @@
 require __DIR__ . '/../admin/inc/db.php';
 require_once __DIR__ . '/inc/platform_settings.php';
 require __DIR__ . '/inc/student_auth.php';
+require __DIR__ . '/inc/access_control.php';
 
 no_cache_headers();
 student_require_login();
@@ -20,12 +21,12 @@ $row = get_platform_settings_row($pdo);
 $platformName = trim((string)($row['platform_name'] ?? 'منصتي التعليمية'));
 if ($platformName === '') $platformName = 'منصتي التعليمية';
 
-/* ✅ FIX: show platform logo in header (same as account.php) */
+/* ✅ show platform logo */
 $logoDb = trim((string)($row['platform_logo'] ?? ''));
 $logoUrl = null;
 if ($logoDb !== '') $logoUrl = '../admin/' . ltrim($logoDb, '/');
 
-/* footer (same logic pattern) */
+/* footer */
 $footerEnabled = (int)($row['footer_enabled'] ?? 1);
 
 $footerLogoDb = trim((string)($row['footer_logo_path'] ?? ''));
@@ -85,6 +86,7 @@ if (!$student) {
   exit;
 }
 $studentName = (string)($student['full_name'] ?? ($_SESSION['student_name'] ?? ''));
+$wallet = (float)($student['wallet_balance'] ?? 0);
 
 /* inputs */
 $lectureId = (int)($_GET['lecture_id'] ?? 0);
@@ -124,7 +126,11 @@ if (!$lecture) {
 
 $courseId = (int)($lecture['course_id'] ?? 0);
 
-/* ✅ NEW: Last update inside this lecture (last add video/pdf) */
+// ✅ Access checks
+$isCourseEnrolled = student_has_course_access($pdo, $studentId, $courseId);
+$isLectureOpen = student_has_lecture_access($pdo, $studentId, $lectureId);
+
+/* ✅ Last update inside this lecture */
 $lastLectureContentAt = '';
 try {
   $stmt = $pdo->prepare("
@@ -158,7 +164,7 @@ try {
 
 try {
   $stmt = $pdo->prepare("
-    SELECT id, title
+    SELECT id, title, file_path
     FROM pdfs
     WHERE lecture_id=?
     ORDER BY id DESC
@@ -197,6 +203,12 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   <link rel="stylesheet" href="assets/css/account.css?v=<?php echo h($cssVer); ?>">
   <link rel="stylesheet" href="assets/css/account-lecture.css?v=<?php echo h($lecCssVer); ?>">
 
+  <style>
+    .buy-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
+    .buy-row form{display:inline}
+    .pill{padding:10px 12px;border:1px solid #ddd;border-radius:14px;font-weight:900}
+  </style>
+
   <title>تفاصيل المحاضرة - <?php echo h((string)$lecture['name']); ?></title>
 </head>
 <body>
@@ -228,6 +240,11 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
           <span aria-hidden="true">👤</span>
           <span class="acc-student__name"><?php echo h($studentName); ?></span>
         </div>
+
+        <div class="acc-pill" title="رصيد المحفظة">
+          <span aria-hidden="true">💳</span>
+          <span><?php echo number_format($wallet, 2); ?> جنيه</span>
+        </div>
       </div>
     </div>
   </div>
@@ -243,7 +260,15 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
       </div>
 
       <div class="acc-lectureInfo">
-        <div class="acc-lectureInfo__row">🔒 الحالة: <b>مقفول لحين الاشتراك</b></div>
+        <div class="acc-lectureInfo__row">
+          الحالة:
+          <?php if ($isLectureOpen): ?>
+            <b style="color:green;">✅ مفتوح</b>
+          <?php else: ?>
+            <b style="color:#b00;">🔒 مقفول</b>
+          <?php endif; ?>
+        </div>
+
         <div class="acc-lectureInfo__row">💰 السعر: <b><?php echo h($lecturePriceText); ?></b></div>
         <div class="acc-lectureInfo__row">🎥 عدد الفيديوهات: <b><?php echo (int)$videosCount; ?></b></div>
         <div class="acc-lectureInfo__row">📑 عدد ملفات PDF: <b><?php echo (int)$pdfsCount; ?></b></div>
@@ -261,8 +286,21 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
         <div class="acc-lectureDetails"><?php echo nl2br(h($details)); ?></div>
       <?php endif; ?>
 
-      <div class="acc-lectureActions">
-        <button class="acc-btn" type="button" disabled title="يبرمج لاحقًا">✅ الاشتراك في المحاضرة</button>
+      <div class="buy-row">
+        <a class="acc-btn acc-btn--ghost" href="redeem.php">🎫 تفعيل كود</a>
+
+        <?php if ($isLectureOpen): ?>
+          <span class="pill">✅ لديك صلاحية مشاهدة المحاضرة</span>
+        <?php else: ?>
+          <?php if (!$isCourseEnrolled): ?>
+            <form method="post" action="buy_lecture_wallet.php">
+              <input type="hidden" name="lecture_id" value="<?php echo (int)$lectureId; ?>">
+              <button class="acc-btn" type="submit">🛒 شراء المحاضرة بالمحفظة</button>
+            </form>
+          <?php else: ?>
+            <span class="pill">✅ أنت مشترك في الكورس، يجب أن تكون المحاضرة مفتوحة</span>
+          <?php endif; ?>
+        <?php endif; ?>
       </div>
     </section>
 
@@ -279,7 +317,12 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
             <div class="acc-item">
               <div class="acc-item__title">🎥 <?php echo h((string)$v['title']); ?></div>
               <div class="acc-item__meta">⏱️ <?php echo (int)($v['duration_minutes'] ?? 0); ?> دقيقة</div>
-              <div class="acc-item__lock">🔒</div>
+
+              <?php if ($isLectureOpen): ?>
+                <div class="acc-item__lock">✅</div>
+              <?php else: ?>
+                <div class="acc-item__lock">🔒</div>
+              <?php endif; ?>
             </div>
           <?php endforeach; ?>
         </div>
@@ -298,8 +341,14 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
           <?php foreach ($pdfs as $p): ?>
             <div class="acc-item">
               <div class="acc-item__title">📑 <?php echo h((string)$p['title']); ?></div>
-              <div class="acc-item__meta">🔒 مقفول</div>
-              <div class="acc-item__lock">🔒</div>
+
+              <?php if ($isLectureOpen): ?>
+                <div class="acc-item__meta">✅ متاح</div>
+                <div class="acc-item__lock">✅</div>
+              <?php else: ?>
+                <div class="acc-item__meta">🔒 مقفول</div>
+                <div class="acc-item__lock">🔒</div>
+              <?php endif; ?>
             </div>
           <?php endforeach; ?>
         </div>

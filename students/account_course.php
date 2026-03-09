@@ -2,6 +2,7 @@
 require __DIR__ . '/../admin/inc/db.php';
 require_once __DIR__ . '/inc/platform_settings.php';
 require __DIR__ . '/inc/student_auth.php';
+require __DIR__ . '/inc/access_control.php';
 
 no_cache_headers();
 student_require_login();
@@ -21,7 +22,6 @@ $row = get_platform_settings_row($pdo);
 $platformName = trim((string)($row['platform_name'] ?? 'منصتي التعليمية'));
 if ($platformName === '') $platformName = 'منصتي التعليمية';
 
-/* ✅ FIX: show platform logo in header (same as account.php) */
 $logoDb = trim((string)($row['platform_logo'] ?? ''));
 $logoUrl = null;
 if ($logoDb !== '') $logoUrl = '../admin/' . ltrim($logoDb, '/');
@@ -88,6 +88,7 @@ if (!$student) {
 }
 
 $studentName = (string)($student['full_name'] ?? ($_SESSION['student_name'] ?? ''));
+$wallet = (float)($student['wallet_balance'] ?? 0);
 
 /* inputs */
 $courseId = (int)($_GET['course_id'] ?? 0);
@@ -116,6 +117,9 @@ if (!$course) {
   header('Location: account.php?page=platform_courses');
   exit;
 }
+
+/* ✅ NEW: is enrolled in course? => opens all lectures automatically */
+$isEnrolledInCourse = student_has_course_access($pdo, $studentId, $courseId);
 
 /* totals for course */
 $courseLecturesCount = 0;
@@ -210,6 +214,12 @@ $discountEnd = (string)($course['discount_end'] ?? '');
   <link rel="stylesheet" href="assets/css/account.css?v=<?php echo h($cssVer); ?>">
   <link rel="stylesheet" href="assets/css/account-course.css?v=<?php echo h($courseCssVer); ?>">
 
+  <style>
+    .buy-box{margin-top:12px;display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+    .buy-box form{display:inline}
+    .buy-pill{padding:10px 12px;border:1px solid #ddd;border-radius:14px;font-weight:900}
+  </style>
+
   <title>تفاصيل الكورس - <?php echo h((string)$course['name']); ?></title>
 </head>
 <body>
@@ -240,6 +250,11 @@ $discountEnd = (string)($course['discount_end'] ?? '');
         <div class="acc-student" title="<?php echo h($studentName); ?>">
           <span aria-hidden="true">👤</span>
           <span class="acc-student__name"><?php echo h($studentName); ?></span>
+        </div>
+
+        <div class="acc-pill" title="رصيد المحفظ��">
+          <span aria-hidden="true">💳</span>
+          <span><?php echo number_format($wallet, 2); ?> جنيه</span>
         </div>
       </div>
     </div>
@@ -300,10 +315,7 @@ $discountEnd = (string)($course['discount_end'] ?? '');
 
           <?php if (trim($lastCourseContentAt) !== ''): ?>
             <div class="acc-courseHero__details" style="margin-top:10px;">
-              🔁 آخر تحديث داخل الكورس:
-              <b><?php echo h($lastCourseContentAt); ?></b>
-              <div style="color:var(--muted);font-weight:900;margin-top:4px;">
-              </div>
+              🔁 آخر تحديث داخل الكورس: <b><?php echo h($lastCourseContentAt); ?></b>
             </div>
           <?php endif; ?>
 
@@ -312,6 +324,23 @@ $discountEnd = (string)($course['discount_end'] ?? '');
             <div class="acc-courseHero__details"><?php echo nl2br(h($details)); ?></div>
           <?php endif; ?>
 
+          <div class="buy-box">
+            <a class="acc-btn acc-btn--ghost" href="redeem.php">🎫 تفعيل كود</a>
+
+            <?php if ($isEnrolledInCourse): ?>
+              <span class="buy-pill">✅ أنت مشترك في هذا الكورس — كل المحاضرات مفتوحة</span>
+            <?php else: ?>
+              <?php if ($accessType === 'buy'): ?>
+                <form method="post" action="buy_course_wallet.php">
+                  <input type="hidden" name="course_id" value="<?php echo (int)$courseId; ?>">
+                  <button class="acc-btn" type="submit">🛒 شراء الكورس بالمحفظة</button>
+                </form>
+              <?php else: ?>
+                <span class="buy-pill">ℹ️ هذا الكورس ليس للبيع بالمحفظة حالياً.</span>
+              <?php endif; ?>
+            <?php endif; ?>
+          </div>
+
         </div>
       </div>
     </section>
@@ -319,7 +348,13 @@ $discountEnd = (string)($course['discount_end'] ?? '');
     <section class="acc-card" aria-label="قائمة المحاضرات">
       <div class="acc-card__head">
         <h2>🧑‍🏫 محاضرات الكورس</h2>
-        <p>قائمة المحاضرات + سعر المحاضرة + عدد الفيديوهات + عدد ملفات PDF (والتفاصيل لكل محاضرة).</p>
+        <p>
+          <?php if ($isEnrolledInCourse): ?>
+            ✅ أنت مشترك في الكورس — كل المحاضرات مفتوحة.
+          <?php else: ?>
+            🔒 أنت غير مشترك في الكورس — يمكنك شراء محاضرة واحدة بالكود أو بالمحفظة.
+          <?php endif; ?>
+        </p>
       </div>
 
       <?php if (empty($lectures)): ?>
@@ -332,16 +367,23 @@ $discountEnd = (string)($course['discount_end'] ?? '');
               $videosCount = (int)($l['videos_count'] ?? 0);
               $pdfsCount = (int)($l['pdfs_count'] ?? 0);
 
-              // lecture price only meaningful if course access_type is buy (same as admin logic)
+              $lectureDetails = trim((string)($l['details'] ?? ''));
+
+              // lecture price
               $lecturePrice = ($l['price'] ?? null);
               $priceText = ($accessType === 'buy') ? (to_money($lecturePrice) . ' جنيه') : 'غير مطلوب';
 
-              $lectureDetails = trim((string)($l['details'] ?? ''));
+              // ✅ access
+              $lectureOpen = $isEnrolledInCourse ? true : student_has_lecture_access($pdo, $studentId, $lectureId);
             ?>
             <article class="acc-lecture">
               <div class="acc-lecture__head">
                 <div class="acc-lecture__title"><?php echo h((string)$l['name']); ?></div>
-                <div class="acc-lecture__lock" title="مقفول لحين الاشتراك">🔒</div>
+                <?php if ($lectureOpen): ?>
+                  <div class="acc-lecture__lock" title="مفتوح">✅</div>
+                <?php else: ?>
+                  <div class="acc-lecture__lock" title="مقفول">🔒</div>
+                <?php endif; ?>
               </div>
 
               <div class="acc-lecture__meta">
@@ -356,7 +398,13 @@ $discountEnd = (string)($course['discount_end'] ?? '');
 
               <div class="acc-lecture__actions">
                 <a class="acc-btn acc-btn--ghost" href="account_lecture.php?lecture_id=<?php echo $lectureId; ?>">📑 تفاصيل المحاضرة</a>
-                <button class="acc-btn" type="button" disabled title="يبرمج لاحقًا">✅ الاشتراك في المحاضرة</button>
+
+                <?php if (!$lectureOpen && !$isEnrolledInCourse): ?>
+                  <form method="post" action="buy_lecture_wallet.php" style="display:inline;">
+                    <input type="hidden" name="lecture_id" value="<?php echo (int)$lectureId; ?>">
+                    <button class="acc-btn" type="submit">🛒 شراء المحاضرة بالمحفظة</button>
+                  </form>
+                <?php endif; ?>
               </div>
             </article>
           <?php endforeach; ?>
