@@ -126,7 +126,7 @@ try {
 
 /* navigation */
 $page = (string)($_GET['page'] ?? 'home');
-$allowedPages = ['home','settings','platform_courses','my_courses','wallet'];
+$allowedPages = ['home','settings','platform_courses','my_courses','wallet','notifications'];
 if (!in_array($page, $allowedPages, true)) $page = 'home';
 
 /* sidebar items */
@@ -138,7 +138,7 @@ $sidebar = [
 
   ['key'=>'assignments', 'label'=>'الواجبات', 'icon'=>'📝', 'href'=>'#', 'disabled'=>true],
   ['key'=>'exams', 'label'=>'الامتحانات', 'icon'=>'🧠', 'href'=>'#', 'disabled'=>true],
-  ['key'=>'notifications', 'label'=>'اشعارات الطلاب', 'icon'=>'🔔', 'href'=>'#', 'disabled'=>true],
+  ['key'=>'notifications', 'label'=>'اشعارات الطلاب', 'icon'=>'🔔', 'href'=>'account.php?page=notifications'],
   ['key'=>'facebook', 'label'=>'فيسبوك المنصة', 'icon'=>'📘', 'href'=>'#', 'disabled'=>true],
   ['key'=>'chat', 'label'=>'شات', 'icon'=>'💬', 'href'=>'#', 'disabled'=>true],
   ['key'=>'wallet', 'label'=>'المحفظة', 'icon'=>'💳', 'href'=>'account.php?page=wallet'],
@@ -444,6 +444,63 @@ try {
   $walletHistory = [];
 }
 
+$studentNotifications = [];
+$studentUnreadNotifications = 0;
+try {
+  $pdo->exec("
+    CREATE TABLE IF NOT EXISTS student_notifications (
+      id INT(10) UNSIGNED NOT NULL AUTO_INCREMENT,
+      grade_id INT(10) UNSIGNED NOT NULL,
+      title VARCHAR(190) NOT NULL,
+      body LONGTEXT NOT NULL,
+      is_active TINYINT(1) NOT NULL DEFAULT 1,
+      created_by_admin_id INT(10) UNSIGNED DEFAULT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      KEY idx_grade (grade_id),
+      KEY idx_active (is_active),
+      CONSTRAINT fk_student_notifications_grade FOREIGN KEY (grade_id) REFERENCES grades(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+  ");
+  $pdo->exec("
+    CREATE TABLE IF NOT EXISTS student_notification_reads (
+      id INT(10) UNSIGNED NOT NULL AUTO_INCREMENT,
+      student_id INT(10) UNSIGNED NOT NULL,
+      notification_id INT(10) UNSIGNED NOT NULL,
+      read_at DATETIME NOT NULL,
+      PRIMARY KEY (id),
+      UNIQUE KEY uniq_student_notification (student_id, notification_id),
+      KEY idx_student_id (student_id),
+      KEY idx_notification_id (notification_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+  ");
+
+  $stmt = $pdo->prepare("
+    SELECT
+      n.id,
+      n.title,
+      n.body,
+      n.created_at,
+      CASE WHEN r.id IS NULL THEN 0 ELSE 1 END AS is_read
+    FROM student_notifications n
+    LEFT JOIN student_notification_reads r
+      ON r.notification_id = n.id AND r.student_id = ?
+    WHERE n.grade_id = ? AND n.is_active = 1
+    ORDER BY n.id DESC
+    LIMIT 50
+  ");
+  $stmt->execute([$studentId, (int)$student['grade_id']]);
+  $studentNotifications = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+  foreach ($studentNotifications as $rowNotif) {
+    if (empty($rowNotif['is_read'])) $studentUnreadNotifications++;
+  }
+} catch (Throwable $e) {
+  $studentNotifications = [];
+  $studentUnreadNotifications = 0;
+}
+
 /* ✅ NEW: attach last content update per course (lecture/video/pdf created_at) */
 $courseLastUpdateMap = [];
 $allCoursesForMap = array_merge($platformCourses, $myCourses);
@@ -665,6 +722,7 @@ if ($cssVer === '' || $cssVer === '0') $cssVer = (string)time();
           if (($it['key'] ?? '') === 'settings' && $page === 'settings') $isActive = true;
           if (($it['key'] ?? '') === 'platform_courses' && $page === 'platform_courses') $isActive = true;
           if (($it['key'] ?? '') === 'my_courses' && $page === 'my_courses') $isActive = true;
+          if (($it['key'] ?? '') === 'notifications' && $page === 'notifications') $isActive = true;
           if (($it['key'] ?? '') === 'wallet' && $page === 'wallet') $isActive = true;
 
           $cls = 'acc-nav__item';
@@ -933,6 +991,48 @@ if ($cssVer === '' || $cssVer === '0') $cssVer = (string)time();
                   <div class="wallet-history__amount <?php echo h((string)$item['amount_class']); ?>">
                     <?php echo h((string)$item['amount_text']); ?>
                   </div>
+                </article>
+              <?php endforeach; ?>
+            </div>
+          <?php endif; ?>
+        </section>
+
+      <?php elseif ($page === 'notifications'): ?>
+        <section class="acc-card" aria-label="إشعارات الطلاب">
+          <div class="acc-card__head">
+            <h2>🔔 إشعارات الطلاب</h2>
+            <p>
+              هنا تظهر الإشعارات التي تضيفها الإدارة للصف الدراسي الخاص بك:
+              <strong><?php echo h((string)$student['grade_name']); ?></strong>.
+            </p>
+          </div>
+
+          <?php if (empty($studentNotifications)): ?>
+            <div class="acc-notifications-empty">
+              لا توجد إشعارات مضافة لهذا الصف الدراسي حالياً.
+            </div>
+          <?php else: ?>
+            <div class="acc-notifications-summary">
+              إجمالي الإشعارات: <strong><?php echo count($studentNotifications); ?></strong>
+              <?php if ($studentUnreadNotifications > 0): ?>
+                <span class="acc-notifications-summary__badge">
+                  <?php echo (int)$studentUnreadNotifications; ?> جديد
+                </span>
+              <?php endif; ?>
+            </div>
+
+            <div class="acc-notifications-list">
+              <?php foreach ($studentNotifications as $notif): ?>
+                <?php $isUnread = empty($notif['is_read']); ?>
+                <article class="acc-notification<?php echo $isUnread ? ' acc-notification--unread' : ''; ?>">
+                  <div class="acc-notification__head">
+                    <h3 class="acc-notification__title"><?php echo h((string)$notif['title']); ?></h3>
+                    <?php if ($isUnread): ?>
+                      <span class="acc-notification__badge">جديد</span>
+                    <?php endif; ?>
+                  </div>
+                  <div class="acc-notification__body"><?php echo nl2br(h((string)$notif['body'])); ?></div>
+                  <div class="acc-notification__time">🗓️ <?php echo h((string)$notif['created_at']); ?></div>
                 </article>
               <?php endforeach; ?>
             </div>

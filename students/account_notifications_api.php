@@ -16,6 +16,35 @@ if ($studentId <= 0) {
 $markRead = ((string)($_GET['mark_read'] ?? '') === '1');
 
 try {
+  $pdo->exec("
+    CREATE TABLE IF NOT EXISTS student_notifications (
+      id INT(10) UNSIGNED NOT NULL AUTO_INCREMENT,
+      grade_id INT(10) UNSIGNED NOT NULL,
+      title VARCHAR(190) NOT NULL,
+      body LONGTEXT NOT NULL,
+      is_active TINYINT(1) NOT NULL DEFAULT 1,
+      created_by_admin_id INT(10) UNSIGNED DEFAULT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      KEY idx_grade (grade_id),
+      KEY idx_active (is_active),
+      CONSTRAINT fk_student_notifications_grade FOREIGN KEY (grade_id) REFERENCES grades(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+  ");
+  $pdo->exec("
+    CREATE TABLE IF NOT EXISTS student_notification_reads (
+      id INT(10) UNSIGNED NOT NULL AUTO_INCREMENT,
+      student_id INT(10) UNSIGNED NOT NULL,
+      notification_id INT(10) UNSIGNED NOT NULL,
+      read_at DATETIME NOT NULL,
+      PRIMARY KEY (id),
+      UNIQUE KEY uniq_student_notification (student_id, notification_id),
+      KEY idx_student_id (student_id),
+      KEY idx_notification_id (notification_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+  ");
+
   $stmt = $pdo->prepare("SELECT grade_id FROM students WHERE id=? LIMIT 1");
   $stmt->execute([$studentId]);
   $st = $stmt->fetch(PDO::FETCH_ASSOC);
