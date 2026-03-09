@@ -570,11 +570,51 @@ function student_assessment_fetch_attempt_payload(PDO $pdo, string $type, int $a
       ];
     }
 
+    $attemptStatus = (string)($attempt['status'] ?? '');
     $startedAt = trim((string)($attempt['started_at'] ?? ''));
     $durationMinutes = (int)($attempt['duration_minutes'] ?? 0);
+    $assessmentDurationMinutes = (int)($attempt['assessment_duration_minutes'] ?? 0);
+    $shouldResetStartedAt = ($attemptStatus === 'in_progress' && strtotime($startedAt) === false);
+    $shouldResetDuration = ($attemptStatus === 'in_progress' && $durationMinutes <= 0 && $assessmentDurationMinutes > 0);
+
+    if ($shouldResetStartedAt) {
+      $startedAt = date('Y-m-d H:i:s');
+      $attempt['started_at'] = $startedAt;
+    }
+    if ($shouldResetDuration) {
+      $durationMinutes = $assessmentDurationMinutes;
+      $attempt['duration_minutes'] = $durationMinutes;
+    }
+    if ($shouldResetStartedAt || $shouldResetDuration) {
+      $sets = [];
+      $params = [];
+      if ($shouldResetStartedAt) {
+        $sets[] = "started_at = ?";
+        $params[] = $startedAt;
+      }
+      if ($shouldResetDuration) {
+        $sets[] = "duration_minutes = ?";
+        $params[] = $durationMinutes;
+      }
+      $params[] = $attemptId;
+      $params[] = $studentId;
+
+      try {
+        $stmt = $pdo->prepare("
+          UPDATE {$cfg['attempt_table']}
+          SET " . implode(', ', $sets) . "
+          WHERE id = ? AND student_id = ?
+        ");
+        $stmt->execute($params);
+      } catch (Throwable $e) {
+        // non-fatal; continue with normalized in-memory values
+      }
+    }
+
+    $startedAtTs = strtotime($startedAt);
     $remainingSeconds = 0;
-    if ($startedAt !== '' && $durationMinutes > 0) {
-      $remainingSeconds = max(0, (strtotime($startedAt) + ($durationMinutes * 60)) - time());
+    if ($startedAtTs !== false && $durationMinutes > 0) {
+      $remainingSeconds = max(0, ($startedAtTs + ($durationMinutes * 60)) - time());
     }
 
     return [
