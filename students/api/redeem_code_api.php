@@ -1,7 +1,4 @@
 <?php
-// students/api/redeem_code_api.php
-// JSON API for code redemption — supports access_codes + legacy course_codes/lecture_codes (migration + single-use)
-
 header('Content-Type: application/json; charset=utf-8');
 
 require __DIR__ . '/../../admin/inc/db.php';
@@ -28,112 +25,41 @@ if ($code === '') {
   exit;
 }
 
-function legacy_date_to_eod_datetime(?string $dateYmd): ?string {
-  $d = trim((string)$dateYmd);
+/** course_codes/lecture_codes expires_at is DATE => treat as end-of-day */
+function date_to_eod(?string $ymd): ?string {
+  $d = trim((string)$ymd);
   if ($d === '') return null;
   return $d . ' 23:59:59';
 }
 
-/**
- * Ensure code exists in access_codes.
- * If missing, try migrate from course_codes/lecture_codes (and lock that row).
- * Returns ['legacy_table' => 'course_codes'|'lecture_codes'|null, 'legacy_id' => int]
- */
-function ensure_access_code(PDO $pdo, string $code): array {
-  $stmt = $pdo->prepare("SELECT id FROM access_codes WHERE code=? LIMIT 1");
-  $stmt->execute([$code]);
-  if ((int)($stmt->fetchColumn() ?: 0) > 0) {
-    return ['legacy_table' => null, 'legacy_id' => 0];
-  }
-
-  // Try course_codes
-  $stmt = $pdo->prepare("
-    SELECT id, is_global, course_id, expires_at, is_used
-    FROM course_codes
-    WHERE code=?
-    LIMIT 1
-    FOR UPDATE
+function ensure_legacy_redemptions_table(PDO $pdo): void {
+  // Table already created by you, but keep safe in case it isn't present somewhere.
+  $pdo->exec("
+    CREATE TABLE IF NOT EXISTS legacy_code_redemptions (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+      code VARCHAR(64) NOT NULL,
+      legacy_table ENUM('course_codes','lecture_codes') NOT NULL,
+      legacy_id BIGINT UNSIGNED NOT NULL,
+      student_id BIGINT UNSIGNED NOT NULL,
+      redeemed_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      UNIQUE KEY uq_code_student (code, student_id),
+      KEY idx_student (student_id),
+      KEY idx_code (code)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
   ");
-  $stmt->execute([$code]);
-  $cc = $stmt->fetch(PDO::FETCH_ASSOC);
-
-  if ($cc) {
-    if ((int)($cc['is_used'] ?? 0) === 1) throw new RuntimeException('تم استهلاك هذا الكود بالكامل.');
-
-    $isGlobal = ((int)($cc['is_global'] ?? 0) === 1);
-    $courseId = $isGlobal ? null : (int)($cc['course_id'] ?? 0);
-    if (!$isGlobal && (!$courseId || $courseId <= 0)) throw new RuntimeException('الكود غير صالح.');
-
-    $expiresAt = legacy_date_to_eod_datetime($cc['expires_at'] ?? null);
-
-    $stmtIns = $pdo->prepare("
-      INSERT INTO access_codes (code, type, course_id, lecture_id, is_active, max_uses, used_count, expires_at)
-      VALUES (?, 'course', ?, NULL, 1, 1, 0, ?)
-    ");
-    $stmtIns->execute([$code, $courseId, $expiresAt]);
-
-    return ['legacy_table' => 'course_codes', 'legacy_id' => (int)$cc['id']];
-  }
-
-  // Try lecture_codes
-  $stmt = $pdo->prepare("
-    SELECT id, is_global, lecture_id, expires_at, is_used
-    FROM lecture_codes
-    WHERE code=?
-    LIMIT 1
-    FOR UPDATE
-  ");
-  $stmt->execute([$code]);
-  $lc = $stmt->fetch(PDO::FETCH_ASSOC);
-
-  if ($lc) {
-    if ((int)($lc['is_used'] ?? 0) === 1) throw new RuntimeException('تم استهلاك هذا الكود بالكامل.');
-
-    $isGlobal  = ((int)($lc['is_global'] ?? 0) === 1);
-    $lectureId = $isGlobal ? null : (int)($lc['lecture_id'] ?? 0);
-    if (!$isGlobal && (!$lectureId || $lectureId <= 0)) throw new RuntimeException('الكود غير صالح.');
-
-    $expiresAt = legacy_date_to_eod_datetime($lc['expires_at'] ?? null);
-
-    $stmtIns = $pdo->prepare("
-      INSERT INTO access_codes (code, type, course_id, lecture_id, is_active, max_uses, used_count, expires_at)
-      VALUES (?, 'lecture', NULL, ?, 1, 1, 0, ?)
-    ");
-    $stmtIns->execute([$code, $lectureId, $expiresAt]);
-
-    return ['legacy_table' => 'lecture_codes', 'legacy_id' => (int)$lc['id']];
-  }
-
-  throw new RuntimeException('الكود غير صحيح.');
 }
 
-function mark_legacy_used(PDO $pdo, ?string $legacyTable, int $legacyId, int $studentId): void {
-  if (!$legacyTable || $legacyId <= 0) return;
-
-  if ($legacyTable === 'course_codes') {
-    $stmt = $pdo->prepare("
-      UPDATE course_codes
-      SET is_used=1, used_by_student_id=?, used_at=NOW()
-      WHERE id=? AND is_used=0
-    ");
-    $stmt->execute([$studentId, $legacyId]);
-  } elseif ($legacyTable === 'lecture_codes') {
-    $stmt = $pdo->prepare("
-      UPDATE lecture_codes
-      SET is_used=1, used_by_student_id=?, used_at=NOW()
-      WHERE id=? AND is_used=0
-    ");
-    $stmt->execute([$studentId, $legacyId]);
-  }
+function legacy_already_used_by_student(PDO $pdo, string $code, int $studentId): bool {
+  $stmt = $pdo->prepare("SELECT 1 FROM legacy_code_redemptions WHERE code=? AND student_id=? LIMIT 1");
+  $stmt->execute([$code, $studentId]);
+  return (bool)$stmt->fetchColumn();
 }
 
 try {
   $pdo->beginTransaction();
 
-  // Make sure code exists in access_codes (migrate from legacy if needed)
-  $legacyInfo = ensure_access_code($pdo, $code);
-
-  // Lock access_codes row
+  // 1) Try access_codes first (if you have some non-global codes there)
   $stmt = $pdo->prepare("
     SELECT id, type, course_id, lecture_id, is_active, max_uses, used_count, expires_at
     FROM access_codes
@@ -142,31 +68,153 @@ try {
     FOR UPDATE
   ");
   $stmt->execute([$code]);
-  $row = $stmt->fetch(PDO::FETCH_ASSOC);
+  $ac = $stmt->fetch(PDO::FETCH_ASSOC);
 
-  if (!$row) throw new RuntimeException('الكود غير صحيح.');
-  if ((int)$row['is_active'] !== 1) throw new RuntimeException('الكود غير مفعل.');
+  if ($ac) {
+    if ((int)$ac['is_active'] !== 1) throw new RuntimeException('الكود غير مفعل.');
 
-  if (!empty($row['expires_at'])) {
-    $expiresAt = strtotime((string)$row['expires_at']);
-    if ($expiresAt !== false && $expiresAt < time()) throw new RuntimeException('انتهت صلاحية هذا الكود.');
+    if (!empty($ac['expires_at'])) {
+      $expiresAt = strtotime((string)$ac['expires_at']);
+      if ($expiresAt !== false && $expiresAt < time()) throw new RuntimeException('انتهت صلاحية هذا الكود.');
+    }
+
+    $maxUses   = $ac['max_uses'] !== null ? (int)$ac['max_uses'] : null;
+    $usedCount = (int)$ac['used_count'];
+    if ($maxUses !== null && $usedCount >= $maxUses) throw new RuntimeException('تم استهلاك هذا الكود بالكامل.');
+
+    $codeId = (int)$ac['id'];
+
+    // prevent same student
+    $stmt = $pdo->prepare("SELECT 1 FROM access_code_redemptions WHERE code_id=? AND student_id=? LIMIT 1");
+    $stmt->execute([$codeId, $studentId]);
+    if ($stmt->fetchColumn()) throw new RuntimeException('أنت استخدمت هذا الكود من قبل.');
+
+    $type = (string)$ac['type'];
+
+    if ($type === 'course') {
+      $courseId = (int)($ac['course_id'] ?? 0);
+      $isGlobal = ($courseId <= 0);
+
+      if ($isGlobal) {
+        if ($targetCourseId <= 0) {
+          $pdo->rollBack();
+          $stmtC = $pdo->prepare("SELECT id, name FROM courses ORDER BY name ASC");
+          $stmtC->execute();
+          $courses = $stmtC->fetchAll(PDO::FETCH_ASSOC) ?: [];
+          echo json_encode([
+            'ok'          => false,
+            'needs_target'=> true,
+            'target_type' => 'course',
+            'message'     => 'هذا الكود عام — اختر الكورس الذي تريد فتحه.',
+            'courses'     => array_map(fn($c) => ['id' => (int)$c['id'], 'name' => (string)$c['name']], $courses),
+          ], JSON_UNESCAPED_UNICODE);
+          exit;
+        }
+        $courseId = $targetCourseId;
+      }
+
+      $stmt = $pdo->prepare("SELECT access_type FROM courses WHERE id=? LIMIT 1");
+      $stmt->execute([$courseId]);
+      $accessType = (string)($stmt->fetchColumn() ?: '');
+      if ($accessType === '') throw new RuntimeException('الكورس غير موجود.');
+      if ($accessType === 'attendance') throw new RuntimeException('هذا الكورس يفتح بالحضور فقط ولا يمكن تفعيله بالكود.');
+
+      if (student_has_course_access($pdo, $studentId, $courseId)) {
+        $pdo->rollBack();
+        echo json_encode(['ok' => true, 'already' => true, 'message' => 'أنت بالفعل مشترك في هذا الكورس.', 'course_id' => $courseId], JSON_UNESCAPED_UNICODE);
+        exit;
+      }
+
+      $pdo->prepare("INSERT INTO access_code_redemptions (code_id, student_id) VALUES (?, ?)")
+          ->execute([$codeId, $studentId]);
+
+      $pdo->prepare("UPDATE access_codes SET used_count = used_count + 1 WHERE id=?")
+          ->execute([$codeId]);
+
+      $pdo->prepare("
+        INSERT INTO student_course_enrollments (student_id, course_id, access_type)
+        VALUES (?, ?, 'code')
+        ON DUPLICATE KEY UPDATE access_type='code'
+      ")->execute([$studentId, $courseId]);
+
+      $pdo->commit();
+      echo json_encode(['ok' => true, 'message' => 'تم تفعيل الكورس بنجاح.', 'course_id' => $courseId], JSON_UNESCAPED_UNICODE);
+      exit;
+
+    } elseif ($type === 'lecture') {
+      $lectureId = (int)($ac['lecture_id'] ?? 0);
+      $isGlobal  = ($lectureId <= 0);
+
+      if ($isGlobal) {
+        if ($targetLectureId <= 0) {
+          $pdo->rollBack();
+          echo json_encode([
+            'ok'          => false,
+            'needs_target'=> true,
+            'target_type' => 'lecture',
+            'message'     => 'هذا الكود عام — يجب تحديد المحاضرة من صفحة الكورس.',
+          ], JSON_UNESCAPED_UNICODE);
+          exit;
+        }
+        $lectureId = $targetLectureId;
+      }
+
+      $courseId = lecture_get_course_id($pdo, $lectureId);
+      if ($courseId <= 0) throw new RuntimeException('المحاضرة غير موجودة.');
+
+      $stmt = $pdo->prepare("SELECT access_type FROM courses WHERE id=? LIMIT 1");
+      $stmt->execute([$courseId]);
+      $courseAccessType = (string)($stmt->fetchColumn() ?: '');
+      if ($courseAccessType === 'attendance') throw new RuntimeException('هذه المحاضرة تفتح بالحضور فقط ولا يمكن تفعيلها بالكود.');
+
+      if (student_has_lecture_access($pdo, $studentId, $lectureId)) {
+        $pdo->rollBack();
+        echo json_encode(['ok' => true, 'already' => true, 'message' => 'أنت بالفعل لديك صلاحية هذه المحاضرة.', 'lecture_id' => $lectureId], JSON_UNESCAPED_UNICODE);
+        exit;
+      }
+
+      $pdo->prepare("INSERT INTO access_code_redemptions (code_id, student_id) VALUES (?, ?)")
+          ->execute([$codeId, $studentId]);
+
+      $pdo->prepare("UPDATE access_codes SET used_count = used_count + 1 WHERE id=?")
+          ->execute([$codeId]);
+
+      $pdo->prepare("
+        INSERT INTO student_lecture_enrollments
+          (student_id, lecture_id, course_id, access_type, paid_amount, lecture_code_id)
+        VALUES
+          (?, ?, ?, 'code', NULL, ?)
+        ON DUPLICATE KEY UPDATE access_type='code', lecture_code_id=VALUES(lecture_code_id)
+      ")->execute([$studentId, $lectureId, $courseId, $codeId]);
+
+      $pdo->commit();
+      echo json_encode(['ok' => true, 'message' => 'تم تفعيل المحاضرة بنجاح.', 'lecture_id' => $lectureId], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+
+    throw new RuntimeException('نوع كود غير مدعوم.');
   }
 
-  $maxUses   = $row['max_uses'] !== null ? (int)$row['max_uses'] : null;
-  $usedCount = (int)$row['used_count'];
-  if ($maxUses !== null && $usedCount >= $maxUses) throw new RuntimeException('تم استهلاك هذا الكود بالكامل.');
+  // 2) Legacy fallback (does NOT write to access_codes to avoid CONSTRAINT_1)
+  ensure_legacy_redemptions_table($pdo);
 
-  $codeId = (int)$row['id'];
-  $type   = (string)$row['type'];
+  if (legacy_already_used_by_student($pdo, $code, $studentId)) {
+    throw new RuntimeException('أنت استخدمت هذا الكود من قبل.');
+  }
 
-  // Prevent redeem same code by same student
-  $stmt = $pdo->prepare("SELECT 1 FROM access_code_redemptions WHERE code_id=? AND student_id=? LIMIT 1");
-  $stmt->execute([$codeId, $studentId]);
-  if ($stmt->fetchColumn()) throw new RuntimeException('أنت استخدمت هذا الكود من قبل.');
+  // course_codes
+  $stmt = $pdo->prepare("SELECT * FROM course_codes WHERE code=? LIMIT 1 FOR UPDATE");
+  $stmt->execute([$code]);
+  $cc = $stmt->fetch(PDO::FETCH_ASSOC);
 
-  if ($type === 'course') {
-    $courseId = (int)($row['course_id'] ?? 0);
-    $isGlobal = ($courseId <= 0);
+  if ($cc) {
+    if ((int)($cc['is_used'] ?? 0) === 1) throw new RuntimeException('تم استهلاك هذا الكود بالكامل.');
+
+    $expiresAt = date_to_eod($cc['expires_at'] ?? null);
+    if ($expiresAt && strtotime($expiresAt) < time()) throw new RuntimeException('انتهت صلاحية هذا الكود.');
+
+    $courseId = ((int)($cc['course_id'] ?? 0));
+    $isGlobal = ((int)($cc['is_global'] ?? 0) === 1);
 
     if ($isGlobal) {
       if ($targetCourseId <= 0) {
@@ -184,14 +232,15 @@ try {
         exit;
       }
       $courseId = $targetCourseId;
+    } else {
+      if ($courseId <= 0) throw new RuntimeException('الكود غير صالح.');
     }
 
-    // Verify course exists and not attendance-only
-    $stmt = $pdo->prepare("SELECT id, access_type FROM courses WHERE id=? LIMIT 1");
+    $stmt = $pdo->prepare("SELECT access_type FROM courses WHERE id=? LIMIT 1");
     $stmt->execute([$courseId]);
-    $courseRow = $stmt->fetch(PDO::FETCH_ASSOC);
-    if (!$courseRow) throw new RuntimeException('الكورس غير موجود.');
-    if ((string)($courseRow['access_type'] ?? '') === 'attendance') throw new RuntimeException('هذا الكورس يفتح بالحضور فقط ولا يمكن تفعيله بالكود.');
+    $accessType = (string)($stmt->fetchColumn() ?: '');
+    if ($accessType === '') throw new RuntimeException('الكورس غير موجود.');
+    if ($accessType === 'attendance') throw new RuntimeException('هذا الكورس يفتح بالحضور فقط ولا يمكن تفعيله بالكود.');
 
     if (student_has_course_access($pdo, $studentId, $courseId)) {
       $pdo->rollBack();
@@ -199,28 +248,44 @@ try {
       exit;
     }
 
-    $stmt = $pdo->prepare("INSERT INTO access_code_redemptions (code_id, student_id) VALUES (?, ?)");
-    $stmt->execute([$codeId, $studentId]);
-
-    $stmt = $pdo->prepare("UPDATE access_codes SET used_count = used_count + 1 WHERE id=?");
-    $stmt->execute([$codeId]);
-
-    $stmt = $pdo->prepare("
+    // enroll
+    $pdo->prepare("
       INSERT INTO student_course_enrollments (student_id, course_id, access_type)
       VALUES (?, ?, 'code')
       ON DUPLICATE KEY UPDATE access_type='code'
-    ");
-    $stmt->execute([$studentId, $courseId]);
+    ")->execute([$studentId, $courseId]);
 
-    mark_legacy_used($pdo, $legacyInfo['legacy_table'] ?? null, (int)($legacyInfo['legacy_id'] ?? 0), $studentId);
+    // record redemption in legacy table
+    $pdo->prepare("
+      INSERT INTO legacy_code_redemptions (code, legacy_table, legacy_id, student_id)
+      VALUES (?, 'course_codes', ?, ?)
+    ")->execute([$code, (int)$cc['id'], $studentId]);
+
+    // mark used
+    $pdo->prepare("
+      UPDATE course_codes
+      SET is_used=1, used_by_student_id=?, used_at=NOW()
+      WHERE id=? AND is_used=0
+    ")->execute([$studentId, (int)$cc['id']]);
 
     $pdo->commit();
-    echo json_encode(['ok' => true, 'message' => 'تم تفعيل الكورس بنجاح، وتم فتح جميع محاضراته.', 'course_id' => $courseId], JSON_UNESCAPED_UNICODE);
+    echo json_encode(['ok' => true, 'message' => 'تم تفعيل الكورس بنجاح.', 'course_id' => $courseId], JSON_UNESCAPED_UNICODE);
     exit;
+  }
 
-  } elseif ($type === 'lecture') {
-    $lectureId = (int)($row['lecture_id'] ?? 0);
-    $isGlobal  = ($lectureId <= 0);
+  // lecture_codes
+  $stmt = $pdo->prepare("SELECT * FROM lecture_codes WHERE code=? LIMIT 1 FOR UPDATE");
+  $stmt->execute([$code]);
+  $lc = $stmt->fetch(PDO::FETCH_ASSOC);
+
+  if ($lc) {
+    if ((int)($lc['is_used'] ?? 0) === 1) throw new RuntimeException('تم استهلاك هذا الكود بالكامل.');
+
+    $expiresAt = date_to_eod($lc['expires_at'] ?? null);
+    if ($expiresAt && strtotime($expiresAt) < time()) throw new RuntimeException('انتهت صلاحية هذا الكود.');
+
+    $lectureId = ((int)($lc['lecture_id'] ?? 0));
+    $isGlobal  = ((int)($lc['is_global'] ?? 0) === 1);
 
     if ($isGlobal) {
       if ($targetLectureId <= 0) {
@@ -234,21 +299,17 @@ try {
         exit;
       }
       $lectureId = $targetLectureId;
+    } else {
+      if ($lectureId <= 0) throw new RuntimeException('الكود غير صالح.');
     }
 
     $courseId = lecture_get_course_id($pdo, $lectureId);
     if ($courseId <= 0) throw new RuntimeException('المحاضرة غير موجودة.');
 
-    $stmtCAT = $pdo->prepare("SELECT access_type FROM courses WHERE id=? LIMIT 1");
-    $stmtCAT->execute([$courseId]);
-    $courseAccessType = (string)($stmtCAT->fetchColumn() ?: '');
+    $stmt = $pdo->prepare("SELECT access_type FROM courses WHERE id=? LIMIT 1");
+    $stmt->execute([$courseId]);
+    $courseAccessType = (string)($stmt->fetchColumn() ?: '');
     if ($courseAccessType === 'attendance') throw new RuntimeException('هذه المحاضرة تفتح بالحضور فقط ولا يمكن تفعيلها بالكود.');
-
-    if (student_has_course_access($pdo, $studentId, $courseId)) {
-      $pdo->rollBack();
-      echo json_encode(['ok' => true, 'already' => true, 'message' => 'أنت مشترك في الكورس بالفعل، كل المحاضرات مفتوحة.', 'lecture_id' => $lectureId], JSON_UNESCAPED_UNICODE);
-      exit;
-    }
 
     if (student_has_lecture_access($pdo, $studentId, $lectureId)) {
       $pdo->rollBack();
@@ -256,30 +317,34 @@ try {
       exit;
     }
 
-    $stmt = $pdo->prepare("INSERT INTO access_code_redemptions (code_id, student_id) VALUES (?, ?)");
-    $stmt->execute([$codeId, $studentId]);
-
-    $stmt = $pdo->prepare("UPDATE access_codes SET used_count = used_count + 1 WHERE id=?");
-    $stmt->execute([$codeId]);
-
-    $stmt = $pdo->prepare("
+    // enroll lecture
+    $pdo->prepare("
       INSERT INTO student_lecture_enrollments
         (student_id, lecture_id, course_id, access_type, paid_amount, lecture_code_id)
       VALUES
-        (?, ?, ?, 'code', NULL, ?)
-      ON DUPLICATE KEY UPDATE access_type='code', lecture_code_id=VALUES(lecture_code_id)
-    ");
-    $stmt->execute([$studentId, $lectureId, $courseId, $codeId]);
+        (?, ?, ?, 'code', NULL, NULL)
+      ON DUPLICATE KEY UPDATE access_type='code'
+    ")->execute([$studentId, $lectureId, $courseId]);
 
-    mark_legacy_used($pdo, $legacyInfo['legacy_table'] ?? null, (int)($legacyInfo['legacy_id'] ?? 0), $studentId);
+    // record redemption legacy
+    $pdo->prepare("
+      INSERT INTO legacy_code_redemptions (code, legacy_table, legacy_id, student_id)
+      VALUES (?, 'lecture_codes', ?, ?)
+    ")->execute([$code, (int)$lc['id'], $studentId]);
+
+    // mark used
+    $pdo->prepare("
+      UPDATE lecture_codes
+      SET is_used=1, used_by_student_id=?, used_at=NOW()
+      WHERE id=? AND is_used=0
+    ")->execute([$studentId, (int)$lc['id']]);
 
     $pdo->commit();
     echo json_encode(['ok' => true, 'message' => 'تم تفعيل المحاضرة بنجاح.', 'lecture_id' => $lectureId], JSON_UNESCAPED_UNICODE);
     exit;
-
-  } else {
-    throw new RuntimeException('نوع كود غير مدعوم.');
   }
+
+  throw new RuntimeException('الكود غير صحيح.');
 
 } catch (Throwable $e) {
   if ($pdo->inTransaction()) $pdo->rollBack();
