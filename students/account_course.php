@@ -1,0 +1,439 @@
+<?php
+require __DIR__ . '/../admin/inc/db.php';
+require_once __DIR__ . '/inc/platform_settings.php';
+require __DIR__ . '/inc/student_auth.php';
+
+no_cache_headers();
+student_require_login();
+
+if (!function_exists('h')) {
+  function h(string $v): string { return htmlspecialchars($v, ENT_QUOTES, 'UTF-8'); }
+}
+
+function to_int($v): int { return (int)$v; }
+function to_money($v): string {
+  if ($v === null || $v === '') return '0';
+  return number_format((float)$v, 2);
+}
+
+/* platform settings (for header/footer) */
+$row = get_platform_settings_row($pdo);
+$platformName = trim((string)($row['platform_name'] ?? 'منصتي التعليمية'));
+if ($platformName === '') $platformName = 'منصتي التعليمية';
+
+/* ✅ FIX: show platform logo in header (same as account.php) */
+$logoDb = trim((string)($row['platform_logo'] ?? ''));
+$logoUrl = null;
+if ($logoDb !== '') $logoUrl = '../admin/' . ltrim($logoDb, '/');
+
+/* footer (same pattern as account.php) */
+$footerEnabled = (int)($row['footer_enabled'] ?? 1);
+
+$footerLogoDb = trim((string)($row['footer_logo_path'] ?? ''));
+$footerLogoUrl = null;
+if ($footerLogoDb !== '') $footerLogoUrl = '../admin/' . ltrim($footerLogoDb, '/');
+
+$footerSocialTitle = trim((string)($row['footer_social_title'] ?? 'السوشيال ميديا'));
+$footerContactTitle = trim((string)($row['footer_contact_title'] ?? 'تواصل معنا'));
+$footerPhone1 = trim((string)($row['footer_phone_1'] ?? ''));
+$footerPhone2 = trim((string)($row['footer_phone_2'] ?? ''));
+$footerRights = trim((string)($row['footer_rights_line'] ?? ''));
+$footerDev = trim((string)($row['footer_developed_by_line'] ?? ''));
+
+$footerSocials = [];
+if ($footerEnabled === 1) {
+  try {
+    $footerSocials = $pdo->query("
+      SELECT label, url, icon_path
+      FROM platform_footer_social_links
+      WHERE is_active=1
+      ORDER BY sort_order ASC, id ASC
+    ")->fetchAll(PDO::FETCH_ASSOC) ?: [];
+  } catch (Throwable $e) {
+    $footerSocials = [];
+  }
+}
+
+$hasFooter = ($footerEnabled === 1) && (
+  $footerLogoUrl !== null ||
+  $footerSocialTitle !== '' ||
+  $footerContactTitle !== '' ||
+  $footerPhone1 !== '' ||
+  $footerPhone2 !== '' ||
+  $footerRights !== '' ||
+  $footerDev !== '' ||
+  count($footerSocials) > 0
+);
+
+function footer_icon_svg(string $key): string {
+  $key = strtolower(trim($key));
+  return '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm7.9 9h-3.2a15.7 15.7 0 0 0-1.2-5A8.1 8.1 0 0 1 19.9 11zM12 4c.8 1 1.7 2.8 2.2 7H9.8c.5-4.2 1.4-6 2.2-7zM4.1 13h3.2a15.7 15.7 0 0 0 1.2 5A8.1 8.1 0 0 1 4.1 13zm3.2-2H4.1A8.1 8.1 0 0 1 8.5 6a15.7 15.7 0 0 0-1.2 5zm2.5 2h4.4c-.5 4.2-1.4-6-2.2-7c-.8-1-1.7-2.8-2.2-7zm5.7 5a15.7 15.7 0 0 0 1.2-5h3.2a8.1 8.1 0 0 1-4.4 5z"/></svg>';
+}
+
+/* current student */
+$studentId = (int)($_SESSION['student_id'] ?? 0);
+$stmt = $pdo->prepare("
+  SELECT s.*, gr.name AS grade_name
+  FROM students s
+  INNER JOIN grades gr ON gr.id = s.grade_id
+  WHERE s.id=?
+  LIMIT 1
+");
+$stmt->execute([$studentId]);
+$student = $stmt->fetch(PDO::FETCH_ASSOC);
+
+if (!$student) {
+  header('Location: logout.php');
+  exit;
+}
+
+$studentName = (string)($student['full_name'] ?? ($_SESSION['student_name'] ?? ''));
+
+/* inputs */
+$courseId = (int)($_GET['course_id'] ?? 0);
+if ($courseId <= 0) {
+  header('Location: account.php?page=platform_courses');
+  exit;
+}
+
+/* course row */
+$course = null;
+try {
+  $stmt = $pdo->prepare("
+    SELECT c.*, gr.name AS grade_name
+    FROM courses c
+    INNER JOIN grades gr ON gr.id = c.grade_id
+    WHERE c.id=?
+    LIMIT 1
+  ");
+  $stmt->execute([$courseId]);
+  $course = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+} catch (Throwable $e) {
+  $course = null;
+}
+
+if (!$course) {
+  header('Location: account.php?page=platform_courses');
+  exit;
+}
+
+/* totals for course */
+$courseLecturesCount = 0;
+$courseVideosCount = 0;
+$coursePdfsCount = 0;
+
+try {
+  $stmt = $pdo->prepare("SELECT COUNT(*) FROM lectures WHERE course_id=?");
+  $stmt->execute([$courseId]);
+  $courseLecturesCount = (int)$stmt->fetchColumn();
+
+  $stmt = $pdo->prepare("SELECT COUNT(*) FROM videos WHERE course_id=?");
+  $stmt->execute([$courseId]);
+  $courseVideosCount = (int)$stmt->fetchColumn();
+
+  $stmt = $pdo->prepare("SELECT COUNT(*) FROM pdfs WHERE course_id=?");
+  $stmt->execute([$courseId]);
+  $coursePdfsCount = (int)$stmt->fetchColumn();
+} catch (Throwable $e) {}
+
+/* ✅ NEW: Last update inside this course (last add lecture/video/pdf) */
+$lastCourseContentAt = '';
+try {
+  $stmt = $pdo->prepare("
+    SELECT MAX(dt) AS last_dt
+    FROM (
+      SELECT l.created_at AS dt FROM lectures l WHERE l.course_id = ?
+      UNION ALL
+      SELECT v.created_at AS dt FROM videos  v WHERE v.course_id = ?
+      UNION ALL
+      SELECT p.created_at AS dt FROM pdfs   p WHERE p.course_id = ?
+    ) x
+  ");
+  $stmt->execute([$courseId, $courseId, $courseId]);
+  $lastCourseContentAt = (string)($stmt->fetchColumn() ?: '');
+} catch (Throwable $e) {
+  $lastCourseContentAt = '';
+}
+
+/* lectures list with counts */
+$lectures = [];
+try {
+  $stmt = $pdo->prepare("
+    SELECT
+      l.*,
+      (SELECT COUNT(*) FROM videos v WHERE v.lecture_id = l.id) AS videos_count,
+      (SELECT COUNT(*) FROM pdfs  p WHERE p.lecture_id = l.id) AS pdfs_count
+    FROM lectures l
+    WHERE l.course_id=?
+    ORDER BY l.id DESC
+  ");
+  $stmt->execute([$courseId]);
+  $lectures = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+} catch (Throwable $e) {
+  $lectures = [];
+}
+
+/* page assets */
+$cssVer = (string)@filemtime(__DIR__ . '/assets/css/account.css');
+if ($cssVer === '' || $cssVer === '0') $cssVer = (string)time();
+$courseCssVer = (string)@filemtime(__DIR__ . '/assets/css/account-course.css');
+if ($courseCssVer === '' || $courseCssVer === '0') $courseCssVer = (string)time();
+
+/* course cover url */
+$imgDb = trim((string)($course['image_path'] ?? ''));
+$imgUrl = null;
+if ($imgDb !== '') $imgUrl = '../admin/' . ltrim($imgDb, '/');
+
+/* pricing (course) */
+$accessType = (string)($course['access_type'] ?? 'attendance'); // attendance | buy | free
+$buyType = (string)($course['buy_type'] ?? 'none');             // none | discount
+$isFree = ($accessType === 'free');
+$isBuy = ($accessType === 'buy');
+$isDiscount = ($isBuy && $buyType === 'discount');
+
+$priceBase = $course['price_base'];
+$priceDiscount = $course['price_discount'];
+$discountEnd = (string)($course['discount_end'] ?? '');
+?>
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;800;900;1000&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="assets/css/site.css">
+  <link rel="stylesheet" href="assets/css/footer.css">
+  <link rel="stylesheet" href="assets/css/account.css?v=<?php echo h($cssVer); ?>">
+  <link rel="stylesheet" href="assets/css/account-course.css?v=<?php echo h($courseCssVer); ?>">
+
+  <title>تفاصيل الكورس - <?php echo h((string)$course['name']); ?></title>
+</head>
+<body>
+
+<header class="acc-topbar" role="banner">
+  <div class="container">
+    <div class="acc-topbar__bar">
+      <div class="acc-topbar__right">
+        <a class="acc-brand" href="account.php?page=platform_courses" aria-label="<?php echo h($platformName); ?>">
+          <?php if ($logoUrl): ?>
+            <img class="acc-brand__logo" src="<?php echo h($logoUrl); ?>" alt="Logo">
+          <?php else: ?>
+            <span class="acc-brand__logoFallback" aria-hidden="true"></span>
+          <?php endif; ?>
+          <span class="acc-brand__name"><?php echo h($platformName); ?></span>
+        </a>
+
+        <div class="acc-theme" data-theme-switch aria-label="تبديل الوضع">
+          <button class="acc-theme__btn" type="button" data-theme="light" aria-label="لايت">☀</button>
+          <button class="acc-theme__btn" type="button" data-theme="dark" aria-label="دارك">🌙</button>
+          <span class="acc-theme__knob" aria-hidden="true"></span>
+        </div>
+      </div>
+
+      <div class="acc-topbar__left">
+        <a class="acc-btn acc-btn--ghost" href="account.php?page=platform_courses">⬅️ رجوع</a>
+
+        <div class="acc-student" title="<?php echo h($studentName); ?>">
+          <span aria-hidden="true">👤</span>
+          <span class="acc-student__name"><?php echo h($studentName); ?></span>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main class="acc-coursePage">
+  <div class="container">
+
+    <section class="acc-courseHero">
+      <div class="acc-courseHero__grid">
+
+        <div class="acc-courseHero__media">
+          <?php if ($imgUrl): ?>
+            <img class="acc-courseHero__img" src="<?php echo h($imgUrl); ?>" alt="<?php echo h((string)$course['name']); ?>">
+          <?php else: ?>
+            <div class="acc-courseHero__imgFallback">📚</div>
+          <?php endif; ?>
+        </div>
+
+        <div class="acc-courseHero__body">
+          <div class="acc-courseHero__title"><?php echo h((string)$course['name']); ?></div>
+          <div class="acc-courseHero__sub">🏫 <?php echo h((string)$course['grade_name']); ?></div>
+
+          <div class="acc-courseHero__pricing">
+            <?php if ($isFree): ?>
+              <span class="acc-badge acc-badge--free">🆓 مجاني</span>
+            <?php elseif ($isBuy): ?>
+              <span class="acc-badge acc-badge--buy">🛒 شراء</span>
+              <?php if ($isDiscount): ?>
+                <div class="acc-price">
+                  <span class="acc-price__label">قبل الخصم:</span>
+                  <span class="acc-price__val acc-price__val--before"><?php echo h((string)$priceBase); ?> جنيه</span>
+                </div>
+                <div class="acc-price">
+                  <span class="acc-price__label">بعد الخصم:</span>
+                  <span class="acc-price__val acc-price__val--after"><?php echo h((string)$priceDiscount); ?> جنيه</span>
+                </div>
+                <?php if ($discountEnd !== ''): ?>
+                  <div class="acc-price acc-price--muted">⏳ حتى <?php echo h($discountEnd); ?></div>
+                <?php endif; ?>
+              <?php else: ?>
+                <div class="acc-price">
+                  <span class="acc-price__label">السعر:</span>
+                  <span class="acc-price__val acc-price__val--after"><?php echo h((string)$priceBase); ?> جنيه</span>
+                </div>
+              <?php endif; ?>
+            <?php else: ?>
+              <span class="acc-badge acc-badge--att">✅ بالحضور</span>
+            <?php endif; ?>
+          </div>
+
+          <div class="acc-courseHero__counts">
+            <div class="acc-count">🧑‍🏫 المحاضرات: <b><?php echo (int)$courseLecturesCount; ?></b></div>
+            <div class="acc-count">🎥 الفيديوهات: <b><?php echo (int)$courseVideosCount; ?></b></div>
+            <div class="acc-count">📑 ملفات PDF: <b><?php echo (int)$coursePdfsCount; ?></b></div>
+          </div>
+
+          <?php if (trim($lastCourseContentAt) !== ''): ?>
+            <div class="acc-courseHero__details" style="margin-top:10px;">
+              🔁 آخر تحديث داخل الكورس:
+              <b><?php echo h($lastCourseContentAt); ?></b>
+              <div style="color:var(--muted);font-weight:900;margin-top:4px;">
+              </div>
+            </div>
+          <?php endif; ?>
+
+          <?php $details = trim((string)($course['details'] ?? '')); ?>
+          <?php if ($details !== ''): ?>
+            <div class="acc-courseHero__details"><?php echo nl2br(h($details)); ?></div>
+          <?php endif; ?>
+
+        </div>
+      </div>
+    </section>
+
+    <section class="acc-card" aria-label="قائمة المحاضرات">
+      <div class="acc-card__head">
+        <h2>🧑‍🏫 محاضرات الكورس</h2>
+        <p>قائمة المحاضرات + سعر المحاضرة + عدد الفيديوهات + عدد ملفات PDF (والتفاصيل لكل محاضرة).</p>
+      </div>
+
+      <?php if (empty($lectures)): ?>
+        <div style="font-weight:900;color:var(--muted);">لا توجد محاضرات داخل هذا الكورس حتى الآن.</div>
+      <?php else: ?>
+        <div class="acc-lecturesGrid">
+          <?php foreach ($lectures as $l): ?>
+            <?php
+              $lectureId = (int)$l['id'];
+              $videosCount = (int)($l['videos_count'] ?? 0);
+              $pdfsCount = (int)($l['pdfs_count'] ?? 0);
+
+              // lecture price only meaningful if course access_type is buy (same as admin logic)
+              $lecturePrice = ($l['price'] ?? null);
+              $priceText = ($accessType === 'buy') ? (to_money($lecturePrice) . ' جنيه') : 'غير مطلوب';
+
+              $lectureDetails = trim((string)($l['details'] ?? ''));
+            ?>
+            <article class="acc-lecture">
+              <div class="acc-lecture__head">
+                <div class="acc-lecture__title"><?php echo h((string)$l['name']); ?></div>
+                <div class="acc-lecture__lock" title="مقفول لحين الاشتراك">🔒</div>
+              </div>
+
+              <div class="acc-lecture__meta">
+                <div class="acc-lecture__row">💰 السعر: <b><?php echo h($priceText); ?></b></div>
+                <div class="acc-lecture__row">🎥 فيديوهات: <b><?php echo $videosCount; ?></b></div>
+                <div class="acc-lecture__row">📑 PDFs: <b><?php echo $pdfsCount; ?></b></div>
+              </div>
+
+              <?php if ($lectureDetails !== ''): ?>
+                <div class="acc-lecture__details"><?php echo nl2br(h($lectureDetails)); ?></div>
+              <?php endif; ?>
+
+              <div class="acc-lecture__actions">
+                <a class="acc-btn acc-btn--ghost" href="account_lecture.php?lecture_id=<?php echo $lectureId; ?>">📑 تفاصيل المحاضرة</a>
+                <button class="acc-btn" type="button" disabled title="يبرمج لاحقًا">✅ الاشتراك في المحاضرة</button>
+              </div>
+            </article>
+          <?php endforeach; ?>
+        </div>
+      <?php endif; ?>
+
+    </section>
+
+  </div>
+</main>
+
+<?php if ($hasFooter): ?>
+  <footer class="site-footer" aria-label="Footer">
+    <div class="container">
+      <div class="footer__grid">
+        <div class="footer__col footer__col--left">
+          <?php if ($footerLogoUrl): ?>
+            <img class="footer__logo" src="<?php echo h($footerLogoUrl); ?>" alt="Logo">
+          <?php else: ?>
+            <div class="footer__logoFallback" aria-hidden="true"></div>
+          <?php endif; ?>
+        </div>
+
+        <div class="footer__col footer__col--mid">
+          <?php if ($footerSocialTitle !== ''): ?>
+            <div class="footer__title"><?php echo h($footerSocialTitle); ?></div>
+          <?php endif; ?>
+
+          <?php if (!empty($footerSocials)): ?>
+            <ul class="footer__list">
+              <?php foreach ($footerSocials as $s): ?>
+                <?php
+                  $socIconDb = trim((string)($s['icon_path'] ?? ''));
+                  $socIconUrl = null;
+                  if ($socIconDb !== '') $socIconUrl = '../admin/' . ltrim($socIconDb, '/');
+                ?>
+                <li class="footer__item">
+                  <a class="footer__link" href="<?php echo h((string)$s['url']); ?>" target="_blank" rel="noopener">
+                    <span class="footer__ico" aria-hidden="true">
+                      <?php if ($socIconUrl): ?>
+                        <img class="footer__icoImg" src="<?php echo h($socIconUrl); ?>" alt="">
+                      <?php else: ?>
+                        <?php echo footer_icon_svg('website'); ?>
+                      <?php endif; ?>
+                    </span>
+                    <span class="footer__lbl"><?php echo h((string)$s['label']); ?></span>
+                  </a>
+                </li>
+              <?php endforeach; ?>
+            </ul>
+          <?php endif; ?>
+        </div>
+
+        <div class="footer__col footer__col--mid2">
+          <?php if ($footerContactTitle !== ''): ?>
+            <div class="footer__title"><?php echo h($footerContactTitle); ?></div>
+          <?php endif; ?>
+
+          <div class="footer__phones">
+            <?php if ($footerPhone1 !== ''): ?><div class="footer__phone"><?php echo h($footerPhone1); ?></div><?php endif; ?>
+            <?php if ($footerPhone2 !== ''): ?><div class="footer__phone"><?php echo h($footerPhone2); ?></div><?php endif; ?>
+          </div>
+        </div>
+
+        <div class="footer__col footer__col--right">
+          <?php if ($footerRights !== ''): ?>
+            <div class="footer-copy footer-copy--rights"><?php echo h($footerRights); ?></div>
+          <?php endif; ?>
+          <?php if ($footerDev !== ''): ?>
+            <div class="footer-copy footer-copy--dev"><?php echo h($footerDev); ?></div>
+          <?php endif; ?>
+        </div>
+      </div>
+    </div>
+  </footer>
+<?php endif; ?>
+
+<script src="assets/js/theme.js"></script>
+</body>
+</html>
