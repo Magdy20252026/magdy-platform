@@ -572,11 +572,6 @@ if ($cssVer === '' || $cssVer === '0') $cssVer = (string)time();
           <div class="acc-card__head">
             <h2>📚 كورسات المنصة</h2>
             <p>هنا تظهر الكورسات التي لست مشتركًا فيها.</p>
-
-            <div class="acc-actionsRow">
-              <button class="acc-btnx acc-btnx--solid" type="button" onclick="openRedeemModal()">🎫 تفعيل كود</button>
-              <a class="acc-btnx acc-btnx--ghost" href="account.php?page=my_courses">🎓 كورساتك</a>
-            </div>
           </div>
 
           <?php if (empty($platformCourses)): ?>
