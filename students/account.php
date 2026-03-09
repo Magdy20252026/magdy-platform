@@ -678,10 +678,6 @@ if ($cssVer === '' || $cssVer === '0') $cssVer = (string)time();
             <h2>🎓 كورساتك</h2>
             <p>هنا تظهر الكورسات التي أنت مشترك فيها.</p>
 
-            <div class="acc-actionsRow">
-              <button class="acc-btnx acc-btnx--solid" type="button" onclick="openRedeemModal()">🎫 تفعيل كود</button>
-              <a class="acc-btnx acc-btnx--ghost" href="account.php?page=platform_courses">📚 كورسات المنصة</a>
-            </div>
           </div>
 
           <?php if (empty($myCourses)): ?>
