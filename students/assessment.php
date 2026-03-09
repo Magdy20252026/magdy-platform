@@ -119,6 +119,7 @@ $isFinished = (bool)($payload['is_finished'] ?? false);
 $questions = (array)($payload['questions'] ?? []);
 $attemptRow = (array)($payload['attempt'] ?? []);
 $remainingSeconds = (int)($payload['remaining_seconds'] ?? 0);
+$remainingMinutes = (int)ceil(max(0, $remainingSeconds) / 60);
 $backHref = 'account.php?page=' . rawurlencode((string)($config['page'] ?? 'home'));
 $pageTitle = $config ? ($config['label'] . ' - ' . $platformName) : ('المحتوى - ' . $platformName);
 ?>
@@ -212,7 +213,7 @@ $pageTitle = $config ? ($config['label'] . ' - ' . $platformName) : ('المحت
               <?php if ($isFinished): ?>
                 ⏱️ انتهى الوقت
               <?php else: ?>
-                ⏱️ --:--
+                <?php echo $remainingMinutes > 0 ? ('⏱️ المتبقي: ' . $remainingMinutes . ' دقيقة') : '⏱️ أقل من دقيقة'; ?>
               <?php endif; ?>
             </span>
           </div>
@@ -423,9 +424,10 @@ $pageTitle = $config ? ($config['label'] . ' - ' . $platformName) : ('المحت
     let left = Math.max(0, remainingSeconds);
 
     function renderTimer() {
-      const mm = String(Math.floor(left / 60)).padStart(2, '0');
-      const ss = String(left % 60).padStart(2, '0');
-      timerEl.textContent = '⏱️ ' + mm + ':' + ss;
+      const minutesLeft = Math.ceil(left / 60);
+      timerEl.textContent = minutesLeft > 0
+        ? ('⏱️ المتبقي: ' + minutesLeft + ' دقيقة')
+        : '⏱️ أقل من دقيقة';
     }
 
     function tick() {
