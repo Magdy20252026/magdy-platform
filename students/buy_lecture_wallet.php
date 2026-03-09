@@ -2,6 +2,7 @@
 require __DIR__ . '/../admin/inc/db.php';
 require __DIR__ . '/inc/student_auth.php';
 require __DIR__ . '/inc/access_control.php';
+require_once __DIR__ . '/../admin/inc/wallet_transactions.php';
 
 no_cache_headers();
 student_require_login();
@@ -16,7 +17,9 @@ if ($lectureId <= 0) {
 
 try {
   // lecture info
-  $stmt = $pdo->prepare("SELECT course_id, price FROM lectures WHERE id=? LIMIT 1");
+  wallet_transactions_ensure_table($pdo);
+
+  $stmt = $pdo->prepare("SELECT course_id, price, name FROM lectures WHERE id=? LIMIT 1");
   $stmt->execute([$lectureId]);
   $lec = $stmt->fetch(PDO::FETCH_ASSOC);
   if (!$lec) throw new RuntimeException('Lecture not found');
@@ -55,6 +58,22 @@ try {
     ON DUPLICATE KEY UPDATE access_type='wallet', paid_amount=VALUES(paid_amount)
   ");
   $stmt->execute([$studentId, $lectureId, $courseId, $price]);
+
+  $stmt = $pdo->prepare("SELECT id FROM student_lecture_enrollments WHERE student_id=? AND lecture_id=? LIMIT 1");
+  $stmt->execute([$studentId, $lectureId]);
+  $enrollmentId = (int)($stmt->fetchColumn() ?? 0);
+
+  $walletTransaction = [
+    'student_id'         => $studentId,
+    'transaction_type'   => 'lecture_purchase',
+    'amount'             => $price,
+    'description'        => wallet_transaction_lecture_description((string)($lec['name'] ?? ''), $lectureId),
+    'related_course_id'  => $courseId,
+    'related_lecture_id' => $lectureId,
+    'reference_type'     => 'lecture_enrollment',
+  ];
+  if ($enrollmentId > 0) $walletTransaction['reference_id'] = $enrollmentId;
+  wallet_transactions_record($pdo, $walletTransaction);
 
   $pdo->commit();
 

@@ -2,6 +2,7 @@
 require __DIR__ . '/../admin/inc/db.php';
 require_once __DIR__ . '/inc/platform_settings.php';
 require __DIR__ . '/inc/student_auth.php';
+require_once __DIR__ . '/../admin/inc/wallet_transactions.php';
 
 no_cache_headers();
 student_require_login();
@@ -125,7 +126,7 @@ try {
 
 /* navigation */
 $page = (string)($_GET['page'] ?? 'home');
-$allowedPages = ['home','settings','platform_courses','my_courses'];
+$allowedPages = ['home','settings','platform_courses','my_courses','wallet'];
 if (!in_array($page, $allowedPages, true)) $page = 'home';
 
 /* sidebar items */
@@ -140,7 +141,7 @@ $sidebar = [
   ['key'=>'notifications', 'label'=>'اشعارات الطلاب', 'icon'=>'🔔', 'href'=>'#', 'disabled'=>true],
   ['key'=>'facebook', 'label'=>'فيسبوك المنصة', 'icon'=>'📘', 'href'=>'#', 'disabled'=>true],
   ['key'=>'chat', 'label'=>'شات', 'icon'=>'💬', 'href'=>'#', 'disabled'=>true],
-  ['key'=>'wallet', 'label'=>'المحفظة', 'icon'=>'💳', 'href'=>'#', 'disabled'=>true],
+  ['key'=>'wallet', 'label'=>'المحفظة', 'icon'=>'💳', 'href'=>'account.php?page=wallet'],
 
   ['key'=>'settings', 'label'=>'إعدادات الحساب', 'icon'=>'⚙️', 'href'=>'account.php?page=settings'],
 
@@ -314,6 +315,135 @@ try {
   $myCourses = [];
 }
 
+/* Wallet history */
+$walletHistory = [];
+$walletSummary = [
+  'credits'   => 0.0,
+  'purchases' => 0.0,
+];
+try {
+  wallet_transactions_ensure_table($pdo);
+
+  /* Mirrors the wallet purchase pricing rules to estimate old course purchases that predate transaction logging. */
+  $stmt = $pdo->prepare("
+    SELECT *
+    FROM (
+      SELECT
+        wt.id AS source_id,
+        0 AS source_rank,
+        wt.created_at,
+        wt.transaction_type,
+        wt.amount,
+        wt.description,
+        c.name AS course_name,
+        l.name AS lecture_name
+      FROM wallet_transactions wt
+      LEFT JOIN courses c ON c.id = wt.related_course_id
+      LEFT JOIN lectures l ON l.id = wt.related_lecture_id
+      WHERE wt.student_id = ?
+
+      UNION ALL
+
+      SELECT
+        sle.id AS source_id,
+        1 AS source_rank,
+        sle.created_at,
+        'legacy_lecture_purchase' AS transaction_type,
+        COALESCE(sle.paid_amount, l.price, 0) AS amount,
+        NULL AS description,
+        c.name AS course_name,
+        l.name AS lecture_name
+      FROM student_lecture_enrollments sle
+      LEFT JOIN courses c ON c.id = sle.course_id
+      LEFT JOIN lectures l ON l.id = sle.lecture_id
+      WHERE sle.student_id = ?
+        AND sle.access_type = 'wallet'
+        AND NOT EXISTS (
+          SELECT 1
+          FROM wallet_transactions wt2
+          WHERE wt2.student_id = sle.student_id
+            AND wt2.reference_type = 'lecture_enrollment'
+            AND wt2.reference_id = sle.id
+        )
+
+      UNION ALL
+
+      SELECT
+        sce.id AS source_id,
+        2 AS source_rank,
+        sce.created_at,
+        'legacy_course_purchase' AS transaction_type,
+        CASE
+          WHEN c.buy_type = 'discount'
+           AND c.price_discount IS NOT NULL
+           AND c.price_discount > 0
+           AND (c.discount_end IS NULL OR DATE_ADD(c.discount_end, INTERVAL 1 DAY) > sce.created_at)
+            THEN c.price_discount
+          ELSE COALESCE(c.price, c.price_base, 0)
+        END AS amount,
+        NULL AS description,
+        c.name AS course_name,
+        NULL AS lecture_name
+      FROM student_course_enrollments sce
+      LEFT JOIN courses c ON c.id = sce.course_id
+      WHERE sce.student_id = ?
+        AND sce.access_type = 'buy'
+        AND NOT EXISTS (
+          SELECT 1
+          FROM wallet_transactions wt3
+          WHERE wt3.student_id = sce.student_id
+            AND wt3.reference_type = 'course_enrollment'
+            AND wt3.reference_id = sce.id
+        )
+    ) wallet_rows
+    ORDER BY created_at DESC, source_rank ASC, source_id DESC
+  ");
+  $stmt->execute([$studentId, $studentId, $studentId]);
+  $walletRows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+  foreach ($walletRows as $row) {
+    $type = (string)($row['transaction_type'] ?? '');
+    $amount = (float)($row['amount'] ?? 0);
+    $courseName = trim((string)($row['course_name'] ?? ''));
+    $lectureName = trim((string)($row['lecture_name'] ?? ''));
+
+    $label = 'عملية على المحفظة';
+    $details = trim((string)($row['description'] ?? ''));
+    $amountPrefix = '-';
+    $amountClass = 'is-negative';
+
+    if ($type === 'credit') {
+      $label = 'إضافة رصيد';
+      $details = ($details !== '' ? $details : 'تمت إضافة رصيد إلى محفظتك.');
+      $amountPrefix = '+';
+      $amountClass = 'is-positive';
+      $walletSummary['credits'] += $amount;
+    } elseif ($type === 'debit') {
+      $label = 'خصم رصيد';
+      $details = ($details !== '' ? $details : 'تم خصم مبلغ من محفظتك.');
+    } elseif (in_array($type, ['lecture_purchase', 'legacy_lecture_purchase'], true)) {
+      $label = 'شراء محاضرة';
+      $details = $lectureName !== '' ? $lectureName : 'محاضرة بالمحفظة';
+      if ($courseName !== '') $details .= ' — ' . $courseName;
+      $walletSummary['purchases'] += $amount;
+    } elseif (in_array($type, ['course_purchase', 'legacy_course_purchase'], true)) {
+      $label = 'شراء كورس';
+      $details = $courseName !== '' ? $courseName : 'كورس بالمحفظة';
+      $walletSummary['purchases'] += $amount;
+    }
+
+    $walletHistory[] = [
+      'label'        => $label,
+      'details'      => $details,
+      'created_at'   => fmt_dt((string)($row['created_at'] ?? '')),
+      'amount_text'  => $amountPrefix . number_format($amount, 2) . ' جنيه',
+      'amount_class' => $amountClass,
+    ];
+  }
+} catch (Throwable $e) {
+  $walletHistory = [];
+}
+
 /* ✅ NEW: attach last content update per course (lecture/video/pdf created_at) */
 $courseLastUpdateMap = [];
 $allCoursesForMap = array_merge($platformCourses, $myCourses);
@@ -444,6 +574,25 @@ if ($cssVer === '' || $cssVer === '0') $cssVer = (string)time();
     .acc-stat__ico{font-size:2em;margin-bottom:6px}
     .acc-stat__val{font-size:1.7em;font-weight:900;color:var(--accent,#0b63ce)}
     .acc-stat__lbl{font-size:.85em;color:var(--muted,#666);margin-top:4px;font-weight:700}
+    .acc-pill--link{text-decoration:none;cursor:pointer;transition:transform .15s ease,box-shadow .15s ease}
+    .acc-pill--link:hover{transform:translateY(-1px);box-shadow:0 6px 18px rgba(0,0,0,.08)}
+    .wallet-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin:18px 0}
+    .wallet-summary__card{background:var(--card-bg,#fff);border:1px solid var(--border,#e2e8f0);border-radius:16px;padding:16px;box-shadow:0 2px 10px rgba(0,0,0,.05)}
+    .wallet-summary__label{color:var(--muted,#666);font-size:.9em;font-weight:800}
+    .wallet-summary__value{margin-top:10px;font-size:1.45em;font-weight:1000;color:var(--accent,#0b63ce)}
+    .wallet-history{display:grid;gap:12px}
+    .wallet-history__item{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:16px;border:1px solid var(--border,#e2e8f0);border-radius:16px;background:var(--card-bg,#fff);box-shadow:0 2px 10px rgba(0,0,0,.04)}
+    .wallet-history__title{font-size:1.05em;font-weight:1000}
+    .wallet-history__meta{margin-top:6px;color:var(--muted,#666);font-size:.92em;font-weight:700;line-height:1.8}
+    .wallet-history__amount{white-space:nowrap;font-weight:1000;font-size:1.05em}
+    .wallet-history__amount.is-positive{color:#157347}
+    .wallet-history__amount.is-negative{color:#b42318}
+    @media (max-width: 980px){ .wallet-summary{grid-template-columns:repeat(2,minmax(0,1fr));} }
+    @media (max-width: 640px){
+      .wallet-summary{grid-template-columns:1fr;}
+      .wallet-history__item{flex-direction:column;align-items:flex-start}
+      .wallet-history__amount{white-space:normal}
+    }
   </style>
 
   <title>حساب الطالب - <?php echo h($platformName); ?></title>
@@ -479,10 +628,10 @@ if ($cssVer === '' || $cssVer === '0') $cssVer = (string)time();
           <span class="acc-student__name"><?php echo h($studentName); ?></span>
         </div>
 
-        <div class="acc-pill" title="رصيد المحفظة">
+        <a class="acc-pill acc-pill--link" href="account.php?page=wallet" title="فتح سجل المحفظة">
           <span aria-hidden="true">💳</span>
           <span><?php echo number_format($wallet, 2); ?> جنيه</span>
-        </div>
+        </a>
 
         <button class="acc-bell" type="button" id="btnBell" aria-label="الإشعارات" title="الإشعارات">
           🔔
@@ -516,6 +665,7 @@ if ($cssVer === '' || $cssVer === '0') $cssVer = (string)time();
           if (($it['key'] ?? '') === 'settings' && $page === 'settings') $isActive = true;
           if (($it['key'] ?? '') === 'platform_courses' && $page === 'platform_courses') $isActive = true;
           if (($it['key'] ?? '') === 'my_courses' && $page === 'my_courses') $isActive = true;
+          if (($it['key'] ?? '') === 'wallet' && $page === 'wallet') $isActive = true;
 
           $cls = 'acc-nav__item';
           if ($isActive) $cls .= ' is-active';
@@ -732,6 +882,56 @@ if ($cssVer === '' || $cssVer === '0') $cssVer = (string)time();
                     <div class="acc-course__actions">
                       <a class="acc-btn" href="account_course.php?course_id=<?php echo (int)$c['id']; ?>">▶️ دخول الكورس</a>
                     </div>
+                  </div>
+                </article>
+              <?php endforeach; ?>
+            </div>
+          <?php endif; ?>
+        </section>
+
+      <?php elseif ($page === 'wallet'): ?>
+        <section class="acc-card" aria-label="سجل المحفظة">
+          <div class="acc-card__head">
+            <h2>💳 سجل المحفظة</h2>
+            <p>هنا تظهر عمليات إضافة الرصيد للمحفظة ومشترياتك بالكورسات والمحاضرات.</p>
+          </div>
+
+          <div class="wallet-summary">
+            <div class="wallet-summary__card">
+              <div class="wallet-summary__label">الرصيد الحالي</div>
+              <div class="wallet-summary__value"><?php echo number_format($wallet, 2); ?> جنيه</div>
+            </div>
+            <div class="wallet-summary__card">
+              <div class="wallet-summary__label">إجمالي الإضافات</div>
+              <div class="wallet-summary__value"><?php echo number_format((float)$walletSummary['credits'], 2); ?> جنيه</div>
+            </div>
+            <div class="wallet-summary__card">
+              <div class="wallet-summary__label">إجمالي المشتريات</div>
+              <div class="wallet-summary__value"><?php echo number_format((float)$walletSummary['purchases'], 2); ?> جنيه</div>
+            </div>
+            <div class="wallet-summary__card">
+              <div class="wallet-summary__label">عدد العمليات</div>
+              <div class="wallet-summary__value"><?php echo count($walletHistory); ?></div>
+            </div>
+          </div>
+
+          <?php if (empty($walletHistory)): ?>
+            <div style="font-weight:900;color:var(--muted);line-height:1.9;">
+              لا توجد عمليات مسجلة في المحفظة حتى الآن.
+            </div>
+          <?php else: ?>
+            <div class="wallet-history">
+              <?php foreach ($walletHistory as $item): ?>
+                <article class="wallet-history__item">
+                  <div>
+                    <div class="wallet-history__title"><?php echo h((string)$item['label']); ?></div>
+                    <div class="wallet-history__meta">
+                      <div><?php echo h((string)$item['details']); ?></div>
+                      <div>🗓️ <?php echo h((string)$item['created_at']); ?></div>
+                    </div>
+                  </div>
+                  <div class="wallet-history__amount <?php echo h((string)$item['amount_class']); ?>">
+                    <?php echo h((string)$item['amount_text']); ?>
                   </div>
                 </article>
               <?php endforeach; ?>
