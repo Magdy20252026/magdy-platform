@@ -1,6 +1,7 @@
 <?php
 require __DIR__ . '/inc/db.php';
 require __DIR__ . '/inc/auth.php';
+require_once __DIR__ . '/inc/wallet_transactions.php';
 
 require_login();
 try {
@@ -449,31 +450,55 @@ if (($_POST['action'] ?? '') === 'wallet_add' || ($_POST['action'] ?? '') === 'w
   elseif ($amount <= 0) $error = 'المبلغ يجب أن يكون أكبر من صفر.';
   else {
     try {
-      if (($_POST['action'] ?? '') === 'wallet_add') {
+      wallet_transactions_ensure_table($pdo);
+      $pdo->beginTransaction();
+
+      $stmt = $pdo->prepare("SELECT wallet_balance FROM students WHERE id=? LIMIT 1 FOR UPDATE");
+      $stmt->execute([$id]);
+      $row = $stmt->fetch();
+
+      if (!$row) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        $error = 'الطالب غير موجود.';
+      } elseif (($_POST['action'] ?? '') === 'wallet_add') {
         $stmt = $pdo->prepare("UPDATE students SET wallet_balance = wallet_balance + ? WHERE id=?");
         $stmt->execute([$amount, $id]);
+
+        wallet_transactions_record($pdo, [
+          'student_id'        => $id,
+          'transaction_type'  => 'credit',
+          'amount'            => $amount,
+          'description'       => 'إضافة رصيد بواسطة الإدارة',
+          'reference_type'    => 'admin_adjustment',
+        ]);
+
+        $pdo->commit();
         header('Location: students.php?wallet=1');
         exit;
       } else {
-        $stmt = $pdo->prepare("SELECT wallet_balance FROM students WHERE id=? LIMIT 1");
-        $stmt->execute([$id]);
-        $row = $stmt->fetch();
-
-        if (!$row) {
-          $error = 'الطالب غير موجود.';
+        $balance = (float)$row['wallet_balance'];
+        if ($amount > $balance) {
+          if ($pdo->inTransaction()) $pdo->rollBack();
+          $error = 'لا يمكن خصم مبلغ أكبر من رصيد محفظة الطالب.';
         } else {
-          $balance = (float)$row['wallet_balance'];
-          if ($amount > $balance) {
-            $error = 'لا يمكن خصم مبلغ أكبر من رصيد محفظة الطالب.';
-          } else {
-            $stmt = $pdo->prepare("UPDATE students SET wallet_balance = wallet_balance - ? WHERE id=?");
-            $stmt->execute([$amount, $id]);
-            header('Location: students.php?wallet=1');
-            exit;
-          }
+          $stmt = $pdo->prepare("UPDATE students SET wallet_balance = wallet_balance - ? WHERE id=?");
+          $stmt->execute([$amount, $id]);
+
+          wallet_transactions_record($pdo, [
+            'student_id'        => $id,
+            'transaction_type'  => 'debit',
+            'amount'            => $amount,
+            'description'       => 'خصم رصيد بواسطة الإدارة',
+            'reference_type'    => 'admin_adjustment',
+          ]);
+
+          $pdo->commit();
+          header('Location: students.php?wallet=1');
+          exit;
         }
       }
     } catch (Throwable $e) {
+      if ($pdo->inTransaction()) $pdo->rollBack();
       $error = 'تعذر تحديث رصيد المحفظة.';
     }
   }

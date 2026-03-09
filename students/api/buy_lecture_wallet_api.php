@@ -7,6 +7,7 @@ header('Content-Type: application/json; charset=utf-8');
 require __DIR__ . '/../../admin/inc/db.php';
 require __DIR__ . '/../inc/student_auth.php';
 require __DIR__ . '/../inc/access_control.php';
+require_once __DIR__ . '/../../admin/inc/wallet_transactions.php';
 
 no_cache_headers();
 student_require_login();
@@ -27,7 +28,7 @@ if ($lectureId <= 0) {
 
 try {
   $stmt = $pdo->prepare("
-    SELECT l.course_id, l.price,
+    SELECT l.course_id, l.price, l.name AS lecture_name,
            c.access_type AS course_access_type
     FROM lectures l
     INNER JOIN courses c ON c.id = l.course_id
@@ -54,6 +55,7 @@ try {
     exit;
   }
 
+  wallet_transactions_ensure_table($pdo);
   $pdo->beginTransaction();
 
   $stmt = $pdo->prepare("SELECT wallet_balance FROM students WHERE id=? LIMIT 1 FOR UPDATE");
@@ -73,6 +75,22 @@ try {
     ON DUPLICATE KEY UPDATE access_type='wallet', paid_amount=VALUES(paid_amount)
   ");
   $stmt->execute([$studentId, $lectureId, $courseId, $price]);
+
+  $stmt = $pdo->prepare("SELECT id FROM student_lecture_enrollments WHERE student_id=? AND lecture_id=? LIMIT 1");
+  $stmt->execute([$studentId, $lectureId]);
+  $enrollmentId = (int)($stmt->fetchColumn() ?? 0);
+
+  $walletTransaction = [
+    'student_id'         => $studentId,
+    'transaction_type'   => 'lecture_purchase',
+    'amount'             => $price,
+    'description'        => wallet_transaction_lecture_description((string)($lec['lecture_name'] ?? ''), $lectureId),
+    'related_course_id'  => $courseId,
+    'related_lecture_id' => $lectureId,
+    'reference_type'     => 'lecture_enrollment',
+  ];
+  if ($enrollmentId > 0) $walletTransaction['reference_id'] = $enrollmentId;
+  wallet_transactions_record($pdo, $walletTransaction);
 
   $pdo->commit();
 

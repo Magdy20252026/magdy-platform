@@ -7,6 +7,7 @@ header('Content-Type: application/json; charset=utf-8');
 require __DIR__ . '/../../admin/inc/db.php';
 require __DIR__ . '/../inc/student_auth.php';
 require __DIR__ . '/../inc/access_control.php';
+require_once __DIR__ . '/../../admin/inc/wallet_transactions.php';
 
 no_cache_headers();
 student_require_login();
@@ -31,7 +32,9 @@ try {
     exit;
   }
 
-  $stmt = $pdo->prepare("SELECT price, price_discount, buy_type, discount_end, access_type FROM courses WHERE id=? LIMIT 1");
+  wallet_transactions_ensure_table($pdo);
+
+  $stmt = $pdo->prepare("SELECT name, price, price_discount, buy_type, discount_end, access_type FROM courses WHERE id=? LIMIT 1");
   $stmt->execute([$courseId]);
   $c = $stmt->fetch(PDO::FETCH_ASSOC);
   if (!$c) throw new RuntimeException('الكورس غير موجود.');
@@ -62,6 +65,21 @@ try {
     ON DUPLICATE KEY UPDATE access_type='buy'
   ");
   $stmt->execute([$studentId, $courseId]);
+
+  $stmt = $pdo->prepare("SELECT id FROM student_course_enrollments WHERE student_id=? AND course_id=? LIMIT 1");
+  $stmt->execute([$studentId, $courseId]);
+  $enrollmentId = (int)($stmt->fetchColumn() ?? 0);
+
+  $walletTransaction = [
+    'student_id'        => $studentId,
+    'transaction_type'  => 'course_purchase',
+    'amount'            => $price,
+    'description'       => wallet_transaction_course_description((string)($c['name'] ?? ''), $courseId),
+    'related_course_id' => $courseId,
+    'reference_type'    => 'course_enrollment',
+  ];
+  if ($enrollmentId > 0) $walletTransaction['reference_id'] = $enrollmentId;
+  wallet_transactions_record($pdo, $walletTransaction);
 
   $pdo->commit();
 
