@@ -371,6 +371,46 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = 'تعذر إرسال الرسالة حالياً.';
       }
     }
+  } elseif ($action === 'react_chat_message' || $action === 'clear_chat_message_reaction') {
+    $messageId = (int)($_POST['message_id'] ?? 0);
+    $reactionType = (string)($_POST['reaction_type'] ?? 'like');
+    if ($messageId <= 0) {
+      $error = 'رسالة الإدارة غير متاحة للتفاعل.';
+    } elseif ($action === 'react_chat_message' && !isset($reactionTypes[$reactionType])) {
+      $error = 'التفاعل المطلوب غير صالح.';
+    } else {
+      try {
+        $stmt = $pdo->prepare("
+          SELECT m.id, c.id AS conversation_id
+          FROM student_chat_messages m
+          INNER JOIN student_chat_conversations c ON c.id = m.conversation_id
+          WHERE m.id = ? AND c.student_id = ? AND m.sender_type = 'admin'
+          LIMIT 1
+        ");
+        $stmt->execute([$messageId, $studentId]);
+        $chatMessageRow = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+        if (!$chatMessageRow) {
+          $error = 'يمكنك التفاعل فقط مع ردود الإدارة داخل محادثاتك.';
+        } else {
+          $conversationId = (int)$chatMessageRow['conversation_id'];
+          if ($action === 'react_chat_message') {
+            $stmt = $pdo->prepare("
+              INSERT INTO student_chat_message_reactions (message_id, student_id, reaction_type)
+              VALUES (?, ?, ?) AS new_reaction
+              ON DUPLICATE KEY UPDATE reaction_type = new_reaction.reaction_type, updated_at = CURRENT_TIMESTAMP
+            ");
+            $stmt->execute([$messageId, $studentId, $reactionType]);
+          } else {
+            $stmt = $pdo->prepare("DELETE FROM student_chat_message_reactions WHERE message_id = ? AND student_id = ?");
+            $stmt->execute([$messageId, $studentId]);
+          }
+          header('Location: account.php?page=chat&chat_id=' . $conversationId . '#chat-message-' . $messageId);
+          exit;
+        }
+      } catch (Throwable $e) {
+        $error = 'تعذر حفظ التفاعل على رد الإدارة حالياً.';
+      }
+    }
   }
 }
 
@@ -701,6 +741,7 @@ $studentConversations = [];
 $selectedConversationId = (int)($_GET['chat_id'] ?? 0);
 $selectedConversation = null;
 $conversationMessages = [];
+$chatMessageReactions = [];
 try {
   $onlineAdmins = $pdo->query("
     SELECT a.id, COALESCE(p.display_name, a.username) AS display_name, p.image_path, p.updated_at
@@ -746,6 +787,15 @@ try {
       $stmt = $pdo->prepare("SELECT * FROM student_chat_messages WHERE conversation_id=? ORDER BY id ASC");
       $stmt->execute([$selectedConversationId]);
       $conversationMessages = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+      $adminMessageIds = array_values(array_map(fn($row) => (int)$row['id'], array_filter($conversationMessages, fn($row) => (string)($row['sender_type'] ?? '') === 'admin')));
+      if ($adminMessageIds) {
+        $in = implode(',', array_fill(0, count($adminMessageIds), '?'));
+        $stmt = $pdo->prepare("SELECT message_id, reaction_type FROM student_chat_message_reactions WHERE student_id = ? AND message_id IN ($in)");
+        $stmt->execute(array_merge([$studentId], $adminMessageIds));
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) ?: [] as $reactionRow) {
+          $chatMessageReactions[(int)$reactionRow['message_id']] = (string)$reactionRow['reaction_type'];
+        }
+      }
     }
   }
 } catch (Throwable $e) {
@@ -753,6 +803,7 @@ try {
   $studentConversations = [];
   $selectedConversation = null;
   $conversationMessages = [];
+  $chatMessageReactions = [];
 }
 
 $assignmentCards = [];
@@ -966,6 +1017,8 @@ if ($cssVer === '' || $cssVer === '0') $cssVer = (string)time();
     .acc-chip{display:inline-flex;align-items:center;gap:6px;padding:8px 12px;border-radius:999px;background:rgba(59,130,246,.08);font-weight:1000}
     .acc-commentForm{margin-top:12px;display:grid;gap:10px}
     .acc-chatSend{margin-top:14px;display:grid;gap:10px}
+    .acc-chatReactions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+    .acc-chatReactionForm{display:inline-flex}
     @media (max-width: 980px){ .acc-assess-grid{grid-template-columns:1fr;} .acc-chatLayout{grid-template-columns:1fr;} }
   </style>
 
@@ -1544,10 +1597,32 @@ if ($cssVer === '' || $cssVer === '0') $cssVer = (string)time();
 
                 <div class="acc-chatMsgs">
                   <?php foreach ($conversationMessages as $message): ?>
-                    <?php $senderType = (string)($message['sender_type'] ?? 'student'); ?>
-                    <div class="acc-chatMsg <?php echo $senderType === 'student' ? 'acc-chatMsg--student' : 'acc-chatMsg--admin'; ?>">
+                    <?php $senderType = (string)($message['sender_type'] ?? 'student'); $messageId = (int)($message['id'] ?? 0); $currentChatReaction = $chatMessageReactions[$messageId] ?? null; ?>
+                    <div class="acc-chatMsg <?php echo $senderType === 'student' ? 'acc-chatMsg--student' : 'acc-chatMsg--admin'; ?>" id="chat-message-<?php echo $messageId; ?>">
                       <div><?php echo nl2br(h((string)$message['message_text'])); ?></div>
                       <div class="acc-chatMeta" style="margin-top:6px;"><?php echo $senderType === 'student' ? 'أنت' : h((string)$selectedConversation['display_name']); ?> — <?php echo h((string)($message['created_at'] ?? '')); ?></div>
+                      <?php if ($senderType === 'admin'): ?>
+                        <?php if ($currentChatReaction && isset($reactionTypes[$currentChatReaction])): ?>
+                          <div class="acc-chatMeta" style="margin-top:10px;">تفاعلك الحالي: <?php echo h((string)$reactionTypes[$currentChatReaction]); ?></div>
+                        <?php endif; ?>
+                        <div class="acc-chatReactions">
+                          <?php foreach ($reactionTypes as $reactionKey => $reactionLabel): ?>
+                            <form method="post" class="acc-chatReactionForm">
+                              <input type="hidden" name="action" value="react_chat_message">
+                              <input type="hidden" name="message_id" value="<?php echo $messageId; ?>">
+                              <input type="hidden" name="reaction_type" value="<?php echo h($reactionKey); ?>">
+                              <button class="acc-reactionBtn <?php echo $currentChatReaction === $reactionKey ? 'is-active' : ''; ?>" type="submit"><?php echo h($reactionLabel); ?></button>
+                            </form>
+                          <?php endforeach; ?>
+                          <?php if ($currentChatReaction): ?>
+                            <form method="post" class="acc-chatReactionForm">
+                              <input type="hidden" name="action" value="clear_chat_message_reaction">
+                              <input type="hidden" name="message_id" value="<?php echo $messageId; ?>">
+                              <button class="acc-reactionBtn" type="submit">➖ إزالة التفاعل</button>
+                            </form>
+                          <?php endif; ?>
+                        </div>
+                      <?php endif; ?>
                     </div>
                   <?php endforeach; ?>
                 </div>

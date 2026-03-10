@@ -173,6 +173,27 @@ $centersList = $pdo->query('SELECT id, name FROM centers ORDER BY name ASC, id A
 $groupsList = $pdo->query("SELECT g.id, g.name, g.grade_id, g.center_id, gr.name AS grade_name, c.name AS center_name FROM `groups` g INNER JOIN grades gr ON gr.id=g.grade_id INNER JOIN centers c ON c.id=g.center_id ORDER BY g.id DESC")->fetchAll(PDO::FETCH_ASSOC) ?: [];
 $coursesList = $pdo->query('SELECT c.id, c.name, c.grade_id, g.name AS grade_name FROM courses c INNER JOIN grades g ON g.id=c.grade_id ORDER BY c.id DESC')->fetchAll(PDO::FETCH_ASSOC) ?: [];
 $lecturesList = $pdo->query('SELECT l.id, l.name, l.course_id, c.name AS course_name FROM lectures l INNER JOIN courses c ON c.id=l.course_id ORDER BY l.id DESC')->fetchAll(PDO::FETCH_ASSOC) ?: [];
+$groupsMap = [];
+$gradeCenterIdsMap = [];
+foreach ($groupsList as $groupRow) {
+  $groupId = (int)($groupRow['id'] ?? 0);
+  $groupGradeId = (int)($groupRow['grade_id'] ?? 0);
+  $groupCenterId = (int)($groupRow['center_id'] ?? 0);
+  if ($groupId > 0) $groupsMap[$groupId] = $groupRow;
+  if ($groupGradeId > 0 && $groupCenterId > 0) {
+    $gradeCenterIdsMap[$groupGradeId][$groupCenterId] = true;
+  }
+}
+$centerGradeIdsTextMap = [];
+foreach ($centersList as $centerRow) {
+  $centerId = (int)($centerRow['id'] ?? 0);
+  if ($centerId <= 0) continue;
+  $centerGradeIds = [];
+  foreach ($gradeCenterIdsMap as $gradeKey => $centerIds) {
+    if (!empty($centerIds[$centerId])) $centerGradeIds[] = (int)$gradeKey;
+  }
+  $centerGradeIdsTextMap[$centerId] = implode(',', $centerGradeIds);
+}
 
 if (($_POST['action'] ?? '') === 'create_session') {
   $title = trim((string)($_POST['title'] ?? ''));
@@ -184,7 +205,20 @@ if (($_POST['action'] ?? '') === 'create_session') {
   $attendanceDate = trim((string)($_POST['attendance_date'] ?? date('Y-m-d')));
   if ($title === '') $error = 'اسم المحاضرة / الجلسة مطلوب.';
   elseif ($gradeId <= 0 || $groupId <= 0) $error = 'اختر الصف الدراسي والمجموعة أولاً.';
+  elseif (!isset($groupsMap[$groupId])) $error = 'المجموعة المختارة غير متاحة.';
   else {
+    if ((int)($groupsMap[$groupId]['grade_id'] ?? 0) !== $gradeId) {
+      $error = 'المجموعة المختارة غير مسجلة داخل الصف الدراسي المحدد.';
+    } else {
+      $groupCenterId = (int)($groupsMap[$groupId]['center_id'] ?? 0);
+      if ($centerId > 0 && $groupCenterId > 0 && $centerId !== $groupCenterId) {
+        $error = 'السنتر المحدد لا يتبع المجموعة المختارة.';
+      } elseif ($centerId <= 0 && $groupCenterId > 0) {
+        $centerId = $groupCenterId;
+      }
+    }
+  }
+  if (!$error) {
     try {
       $stmt = $pdo->prepare('INSERT INTO attendance_sessions (title, grade_id, center_id, group_id, course_id, lecture_id, attendance_date, is_open, created_by_admin_id) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)');
       $stmt->execute([$title, $gradeId, ($centerId > 0 ? $centerId : null), $groupId, ($courseId > 0 ? $courseId : null), ($lectureId > 0 ? $lectureId : null), $attendanceDate !== '' ? $attendanceDate : date('Y-m-d'), $adminId]);
@@ -351,11 +385,11 @@ if ($adminRole !== 'مدير') {
           <input type="hidden" name="action" value="create_session">
           <input type="text" name="title" placeholder="مثال: حصة الثلاثاء 1" required>
           <div class="att-row">
-            <select name="grade_id" required><option value="">اختر الصف الدراسي</option><?php foreach ($gradesList as $g): ?><option value="<?php echo (int)$g['id']; ?>"><?php echo h((string)$g['name']); ?></option><?php endforeach; ?></select>
-            <select name="center_id"><option value="">السنتر (اختياري)</option><?php foreach ($centersList as $c): ?><option value="<?php echo (int)$c['id']; ?>"><?php echo h((string)$c['name']); ?></option><?php endforeach; ?></select>
+            <select name="grade_id" id="attendanceGradeSelect" required><option value="">اختر الصف الدراسي</option><?php foreach ($gradesList as $g): ?><option value="<?php echo (int)$g['id']; ?>"><?php echo h((string)$g['name']); ?></option><?php endforeach; ?></select>
+            <select name="center_id" id="attendanceCenterSelect"><option value="">السنتر (تلقائي من المجموعة أو اختياري)</option><?php foreach ($centersList as $c): ?><option value="<?php echo (int)$c['id']; ?>" data-grade-ids="<?php echo h((string)($centerGradeIdsTextMap[(int)$c['id']] ?? '')); ?>"><?php echo h((string)$c['name']); ?></option><?php endforeach; ?></select>
           </div>
           <div class="att-row">
-            <select name="group_id" required><option value="">اختر المجموعة</option><?php foreach ($groupsList as $g): ?><option value="<?php echo (int)$g['id']; ?>"><?php echo h((string)$g['name']); ?> — <?php echo h((string)$g['grade_name']); ?> / <?php echo h((string)$g['center_name']); ?></option><?php endforeach; ?></select>
+            <select name="group_id" id="attendanceGroupSelect" required><option value="">اختر المجموعة</option><?php foreach ($groupsList as $g): ?><option value="<?php echo (int)$g['id']; ?>" data-grade-id="<?php echo (int)$g['grade_id']; ?>" data-center-id="<?php echo (int)$g['center_id']; ?>"><?php echo h((string)$g['name']); ?> — <?php echo h((string)$g['grade_name']); ?> / <?php echo h((string)$g['center_name']); ?></option><?php endforeach; ?></select>
             <input type="date" name="attendance_date" value="<?php echo h(date('Y-m-d')); ?>">
           </div>
           <div class="att-row">
@@ -455,10 +489,198 @@ if ($adminRole !== 'مدير') {
 </div>
 <div class="backdrop" id="backdrop" aria-hidden="true"></div>
 <script>
-(function(){const root=document.body,themeSwitch=document.getElementById('themeSwitch'),stored=localStorage.getItem('admin_theme')||'auto';function osPrefersDark(){return window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches}function applyTheme(mode){root.setAttribute('data-theme',mode);localStorage.setItem('admin_theme',mode);if(themeSwitch)themeSwitch.checked=(mode==='dark')||(mode==='auto'&&osPrefersDark())}applyTheme(stored);themeSwitch&&themeSwitch.addEventListener('change',()=>applyTheme(themeSwitch.checked?'dark':'light'));if(stored==='auto'&&window.matchMedia)window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>applyTheme('auto'));const burger=document.getElementById('burger'),sidebar=document.getElementById('sidebar'),backdrop=document.getElementById('backdrop');function isMobile(){return window.matchMedia&&window.matchMedia('(max-width:980px)').matches}function openSidebar(){if(!isMobile())return;sidebar.classList.add('open');backdrop.classList.add('show');document.body.style.overflow='hidden'}function closeSidebar(){if(!isMobile())return;sidebar.classList.remove('open');backdrop.classList.remove('show');document.body.style.overflow=''}function syncInitial(){if(isMobile())closeSidebar();else{sidebar.classList.remove('open');backdrop.classList.remove('show');document.body.style.overflow=''}}syncInitial();burger&&burger.addEventListener('click',(e)=>{e.preventDefault();if(sidebar.classList.contains('open'))closeSidebar();else openSidebar();});backdrop&&backdrop.addEventListener('click',closeSidebar);window.addEventListener('keydown',(e)=>{if(e.key==='Escape')closeSidebar();});window.addEventListener('resize',syncInitial);
-const barcodeInput=document.getElementById('barcodeInput'), toggleCamera=document.getElementById('toggleCamera'), cameraPreview=document.getElementById('cameraPreview'), scanMethod=document.getElementById('scanMethod'), scanForm=document.getElementById('scanForm');let mediaStream=null, detector=null, scanTimer=null; barcodeInput&&barcodeInput.focus(); async function stopCamera(){if(scanTimer){clearInterval(scanTimer);scanTimer=null;} if(mediaStream){mediaStream.getTracks().forEach(t=>t.stop());mediaStream=null;} if(cameraPreview){cameraPreview.pause();cameraPreview.srcObject=null;cameraPreview.style.display='none';} if(toggleCamera) toggleCamera.textContent='📱 تشغيل كاميرا الموبايل';}
-async function startCamera(){if(!cameraPreview||!toggleCamera) return; if(!('mediaDevices' in navigator) || !navigator.mediaDevices.getUserMedia){alert('الكاميرا غير مدعومة في هذا المتصفح.'); return;} if(!('BarcodeDetector' in window)){alert('المتصفح لا يدعم BarcodeDetector. استخدم قارئ الباركود أو الإدخال اليدوي.'); return;} detector = new BarcodeDetector({formats:['code_128','ean_13','ean_8','qr_code']}); mediaStream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}}); cameraPreview.srcObject=mediaStream; cameraPreview.style.display='block'; await cameraPreview.play(); toggleCamera.textContent='⛔ إيقاف الكاميرا'; scanTimer=setInterval(async()=>{if(!detector||!cameraPreview) return; try{const barcodes=await detector.detect(cameraPreview); if(barcodes && barcodes.length){const raw=(barcodes[0].rawValue||'').trim(); if(raw && barcodeInput){ barcodeInput.value=raw; if(scanMethod) scanMethod.value='camera'; stopCamera(); scanForm && scanForm.submit(); }}}catch(err){}},800);}
-if(toggleCamera){toggleCamera.addEventListener('click',async()=>{if(mediaStream){await stopCamera(); return;} try{await startCamera();}catch(err){await stopCamera(); alert('تعذر تشغيل الكاميرا الآن.');}});} barcodeInput&&barcodeInput.addEventListener('keydown',(e)=>{ if(e.key==='Enter' && scanMethod) scanMethod.value='barcode';});})();
+(function () {
+  const root = document.body;
+  const themeSwitch = document.getElementById('themeSwitch');
+  const stored = localStorage.getItem('admin_theme') || 'auto';
+
+  function osPrefersDark() {
+    return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  }
+
+  function applyTheme(mode) {
+    root.setAttribute('data-theme', mode);
+    localStorage.setItem('admin_theme', mode);
+    if (themeSwitch) themeSwitch.checked = (mode === 'dark') || (mode === 'auto' && osPrefersDark());
+  }
+
+  applyTheme(stored);
+  themeSwitch && themeSwitch.addEventListener('change', () => applyTheme(themeSwitch.checked ? 'dark' : 'light'));
+  if (stored === 'auto' && window.matchMedia) {
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => applyTheme('auto'));
+  }
+
+  const burger = document.getElementById('burger');
+  const sidebar = document.getElementById('sidebar');
+  const backdrop = document.getElementById('backdrop');
+
+  function isMobile() {
+    return window.matchMedia && window.matchMedia('(max-width:980px)').matches;
+  }
+
+  function openSidebar() {
+    if (!isMobile()) return;
+    sidebar.classList.add('open');
+    backdrop.classList.add('show');
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closeSidebar() {
+    if (!isMobile()) return;
+    sidebar.classList.remove('open');
+    backdrop.classList.remove('show');
+    document.body.style.overflow = '';
+  }
+
+  function syncInitial() {
+    if (isMobile()) {
+      closeSidebar();
+    } else {
+      sidebar.classList.remove('open');
+      backdrop.classList.remove('show');
+      document.body.style.overflow = '';
+    }
+  }
+
+  syncInitial();
+  burger && burger.addEventListener('click', (e) => {
+    e.preventDefault();
+    if (sidebar.classList.contains('open')) closeSidebar();
+    else openSidebar();
+  });
+  backdrop && backdrop.addEventListener('click', closeSidebar);
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeSidebar();
+  });
+  window.addEventListener('resize', syncInitial);
+
+  const gradeSelect = document.getElementById('attendanceGradeSelect');
+  const centerSelect = document.getElementById('attendanceCenterSelect');
+  const groupSelect = document.getElementById('attendanceGroupSelect');
+
+  function syncAttendanceOptions() {
+    const gradeValue = gradeSelect && gradeSelect.value ? gradeSelect.value : '';
+    const centerValue = centerSelect && centerSelect.value ? centerSelect.value : '';
+
+    if (centerSelect) {
+      Array.from(centerSelect.options).forEach((option, index) => {
+        if (index === 0) return;
+        const grades = (option.dataset.gradeIds || '').split(',').filter(Boolean);
+        option.hidden = !!gradeValue && !grades.includes(gradeValue);
+      });
+      if (centerSelect.selectedOptions.length && centerSelect.selectedOptions[0] && centerSelect.selectedOptions[0].hidden) {
+        centerSelect.value = '';
+      }
+    }
+
+    if (groupSelect) {
+      Array.from(groupSelect.options).forEach((option, index) => {
+        if (index === 0) return;
+        const optionGrade = option.dataset.gradeId || '';
+        const optionCenter = option.dataset.centerId || '';
+        option.hidden = (!!gradeValue && optionGrade !== gradeValue) || (!!centerValue && optionCenter !== centerValue);
+      });
+      if (groupSelect.selectedOptions.length && groupSelect.selectedOptions[0] && groupSelect.selectedOptions[0].hidden) {
+        groupSelect.value = '';
+      }
+    }
+  }
+
+  gradeSelect && gradeSelect.addEventListener('change', () => {
+    if (centerSelect) centerSelect.value = '';
+    syncAttendanceOptions();
+  });
+  centerSelect && centerSelect.addEventListener('change', syncAttendanceOptions);
+  groupSelect && groupSelect.addEventListener('change', () => {
+    const selectedOption = groupSelect.selectedOptions[0];
+    if (!selectedOption || !centerSelect) return;
+    const groupCenterId = selectedOption.dataset.centerId || '';
+    if (groupCenterId) centerSelect.value = groupCenterId;
+    syncAttendanceOptions();
+  });
+  syncAttendanceOptions();
+
+  const barcodeInput = document.getElementById('barcodeInput');
+  const toggleCamera = document.getElementById('toggleCamera');
+  const cameraPreview = document.getElementById('cameraPreview');
+  const scanMethod = document.getElementById('scanMethod');
+  const scanForm = document.getElementById('scanForm');
+  let mediaStream = null;
+  let detector = null;
+  let scanTimer = null;
+
+  if (barcodeInput) barcodeInput.focus();
+
+  async function stopCamera() {
+    if (scanTimer) {
+      clearInterval(scanTimer);
+      scanTimer = null;
+    }
+    if (mediaStream) {
+      mediaStream.getTracks().forEach((track) => track.stop());
+      mediaStream = null;
+    }
+    if (cameraPreview) {
+      cameraPreview.pause();
+      cameraPreview.srcObject = null;
+      cameraPreview.style.display = 'none';
+    }
+    if (toggleCamera) toggleCamera.textContent = '📱 تشغيل كاميرا الموبايل';
+  }
+
+  async function startCamera() {
+    if (!cameraPreview || !toggleCamera) return;
+    if (!('mediaDevices' in navigator) || !navigator.mediaDevices.getUserMedia) {
+      alert('الكاميرا غير مدعومة في هذا المتصفح.');
+      return;
+    }
+    if (!('BarcodeDetector' in window)) {
+      alert('المتصفح لا يدعم BarcodeDetector. استخدم قارئ الباركود أو الإدخال اليدوي.');
+      return;
+    }
+
+    detector = new BarcodeDetector({ formats: ['code_128', 'ean_13', 'ean_8', 'qr_code'] });
+    mediaStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+    cameraPreview.srcObject = mediaStream;
+    cameraPreview.style.display = 'block';
+    await cameraPreview.play();
+    toggleCamera.textContent = '⛔ إيقاف الكاميرا';
+    scanTimer = setInterval(async () => {
+      if (!detector || !cameraPreview) return;
+      try {
+        const barcodes = await detector.detect(cameraPreview);
+        if (barcodes && barcodes.length) {
+          const raw = (barcodes[0].rawValue || '').trim();
+          if (raw && barcodeInput) {
+            barcodeInput.value = raw;
+            if (scanMethod) scanMethod.value = 'camera';
+            stopCamera();
+            if (scanForm) scanForm.submit();
+          }
+        }
+      } catch (err) {}
+    }, 800);
+  }
+
+  if (toggleCamera) {
+    toggleCamera.addEventListener('click', async () => {
+      if (mediaStream) {
+        await stopCamera();
+        return;
+      }
+      try {
+        await startCamera();
+      } catch (err) {
+        await stopCamera();
+        alert('تعذر تشغيل الكاميرا الآن.');
+      }
+    });
+  }
+
+  barcodeInput && barcodeInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && scanMethod) scanMethod.value = 'barcode';
+  });
+})();
 </script>
 </body>
 </html>
