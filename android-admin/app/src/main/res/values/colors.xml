@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="admin_primary">#0F172A</color>
+    <color name="admin_primary_variant">#1D4ED8</color>
+    <color name="admin_secondary">#F59E0B</color>
+    <color name="admin_background">#FFFFFF</color>
+</resources>
+

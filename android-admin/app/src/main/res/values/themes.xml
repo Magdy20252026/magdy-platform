@@ -1,0 +1,11 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <style name="Theme.MagdyAdmin" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/admin_primary</item>
+        <item name="colorPrimaryContainer">@color/admin_primary_variant</item>
+        <item name="colorSecondary">@color/admin_secondary</item>
+        <item name="android:statusBarColor" tools:targetApi="l">@color/admin_primary</item>
+        <item name="android:navigationBarColor">@color/admin_primary</item>
+        <item name="android:windowBackground">@color/admin_background</item>
+    </style>
+</resources>
+
