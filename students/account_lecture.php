@@ -753,16 +753,25 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
 
           var newScript = document.createElement('script');
           Array.prototype.slice.call(oldScript.attributes).forEach(function(attr){
-            newScript.setAttribute(attr.name, attr.value);
+            var attrName = String(attr.name || '').toLowerCase();
+            if (
+              attrName === 'src' ||
+              attrName === 'type' ||
+              attrName === 'async' ||
+              attrName === 'defer' ||
+              attrName === 'id' ||
+              attrName.indexOf('data-') === 0
+            ) {
+              newScript.setAttribute(attr.name, attr.value);
+            }
           });
 
-          var scriptText = oldScript.text || oldScript.textContent || '';
           if (newScript.src) {
             newScript.async = false;
             newScript.onload = resolve;
             newScript.onerror = resolve;
           } else {
-            newScript.text = scriptText;
+            newScript.text = oldScript.text || oldScript.textContent || '';
           }
 
           oldScript.parentNode.replaceChild(newScript, oldScript);
