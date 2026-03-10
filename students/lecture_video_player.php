@@ -505,7 +505,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
     return isStageFullscreenActive() || hasMobileSystemOverlayGrace();
   }
 
-  function allowMobileSystemOverlayGrace() {
+  function refreshMobileSystemOverlayGrace() {
     if (!isLikelyMobilePlayback() || !playbackBootstrapped || protectedPageClosed || videoState.isBlocked) return false;
     if (!isStageFullscreenActive() && !hasMobileSystemOverlayGrace()) return false;
     mobileSystemOverlayGraceUntil = Date.now() + mobileSystemOverlayGraceMs;
@@ -1008,9 +1008,9 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
         setCaptureShieldLocked(mobileExitShieldMessage);
         updateNotice('🔒 تمت إعادة حماية الفيديو بعد الخروج من العرض الآمن. افتح المشغل المحمي للمتابعة.', true);
       } else if (document.fullscreenElement && isLikelyMobilePlayback() && !protectedPageClosed && !videoState.isBlocked) {
-        allowMobileSystemOverlayGrace();
+        refreshMobileSystemOverlayGrace();
         lockMobileLandscapeOrientation();
-        updateNotice('✅ تم تفعيل العرض الآمن بملء الشاشة على هذا الجهاز. سيتم استخدام العرض الأفقي عند دعمه، ويمكنك متابعة تشغيل الفيديو من داخل المشغل.', false);
+        updateNotice('✅ تم تفعيل العرض الآمن بملء الشاشة على هذا الجهاز. سيتم استخدام العرض الأفقي عند دعمه، وإلا سيستمر العرض المعتاد ويمكنك متابعة الفيديو من داخل المشغل.', false);
       }
       toggleImmersiveControlsVisibility(true);
     });
@@ -1234,7 +1234,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
 
   document.addEventListener('visibilitychange', function(){
     if (document.visibilityState === 'hidden') {
-      if (allowMobileSystemOverlayGrace()) {
+      if (refreshMobileSystemOverlayGrace()) {
         sendProgress('heartbeat');
         return;
       }
@@ -1248,7 +1248,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   });
   window.addEventListener('blur', function(){
     window.setTimeout(function(){
-      if (allowMobileSystemOverlayGrace()) {
+      if (refreshMobileSystemOverlayGrace()) {
         sendProgress('heartbeat');
         return;
       }
@@ -1258,7 +1258,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   });
   window.addEventListener('pagehide', function(){
     if (protectedPageClosed || videoState.isBlocked) return;
-    if (allowMobileSystemOverlayGrace()) {
+    if (refreshMobileSystemOverlayGrace()) {
       sendProgress('heartbeat');
       return;
     }
