@@ -53,6 +53,7 @@ function menu_visible(array $allowedKeys, string $key, string $role): bool {
 function videos_secret_key(): string {
   // الأفضل: define('APP_SECRET', '...') في ملف خارج الويب
   if (defined('APP_SECRET') && is_string(APP_SECRET) && APP_SECRET !== '') return APP_SECRET;
+  if (defined('APP_EMBED_SECRET_KEY') && is_string(APP_EMBED_SECRET_KEY) && APP_EMBED_SECRET_KEY !== '') return APP_EMBED_SECRET_KEY;
 
   // fallback (غير مثالي): يعتمد على session id
   $sid = session_id();

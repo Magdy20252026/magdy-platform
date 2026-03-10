@@ -60,3 +60,268 @@
   border: 1px solid var(--border);
   background: rgba(207,42,55,.08);
 }
+
+.acc-itemsList--media{ margin-top: 16px; }
+
+.acc-item--media{
+  width: 100%;
+  text-align: right;
+  cursor: pointer;
+  transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease, background .18s ease;
+}
+
+.acc-item--media:hover{
+  transform: translateY(-1px);
+  border-color: rgba(44,123,229,.35);
+}
+
+.acc-item--media.is-active{
+  border-color: rgba(44,123,229,.55);
+  box-shadow: 0 12px 34px rgba(44,123,229,.12);
+}
+
+.acc-item--media.is-blocked{
+  opacity: .75;
+}
+
+.acc-item__body{
+  display:grid;
+  gap: 6px;
+}
+
+.acc-item__desc{
+  color: var(--text);
+  font-weight: 850;
+  line-height: 1.7;
+}
+
+.acc-item__badge{
+  justify-self: start;
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(46, 125, 50, .12);
+  color: #1d6b22;
+  font-weight: 900;
+  font-size: .9rem;
+}
+
+.acc-item__badge--danger{
+  background: rgba(207,42,55,.1);
+  color: #b91c1c;
+}
+
+.acc-playerShell,
+.acc-pdfShell{
+  display:grid;
+  gap: 14px;
+}
+
+.acc-playerStage,
+.acc-pdfViewer{
+  position: relative;
+  border-radius: 22px;
+  overflow: hidden;
+  background: #06070d;
+  border: 1px solid rgba(255,255,255,.08);
+  box-shadow: 0 24px 50px rgba(0,0,0,.22);
+}
+
+.acc-playerStage{
+  min-height: min(62vw, 540px);
+}
+
+.acc-playerStage:fullscreen{
+  width: 100vw;
+  height: 100vh;
+  max-width: 100vw;
+  max-height: 100vh;
+  border-radius: 0;
+}
+
+.acc-playerStage:fullscreen .acc-playerSurface{
+  height: 100vh;
+  min-height: 100vh;
+}
+
+.acc-playerSurface{
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  min-height: 320px;
+}
+
+.acc-playerPlaceholder{
+  position: absolute;
+  inset: 0;
+  display:grid;
+  place-items:center;
+  padding: 24px;
+  text-align: center;
+  color: #fff;
+  font-size: 1.05rem;
+  line-height: 1.9;
+  background:
+    radial-gradient(circle at top, rgba(44,123,229,.25), transparent 46%),
+    linear-gradient(135deg, #0a1020, #05070d);
+}
+
+.acc-embeddedFrame,
+.acc-pdfViewer iframe{
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display:block;
+  background: #000;
+}
+
+.acc-playerOverlay,
+.acc-pdfOverlay{
+  position:absolute;
+  inset:0;
+  pointer-events:none;
+  z-index:3;
+}
+
+.acc-playerOverlay__chip,
+.acc-pdfOverlay__chip,
+.acc-screenWatermark__chip{
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: rgba(10, 15, 30, .55);
+  border: 1px solid rgba(255,255,255,.14);
+  color: rgba(255,255,255,.78);
+  font-size: .95rem;
+  font-weight: 900;
+  letter-spacing: .02em;
+  backdrop-filter: blur(6px);
+  text-shadow: 0 1px 2px rgba(0,0,0,.22);
+}
+
+.acc-playerOverlay__chip{
+  position:absolute;
+  top: 14px;
+  right: 18px;
+  animation: playerWatermarkMove 16s linear infinite alternate;
+}
+
+.acc-pdfOverlay__chip{
+  position:absolute;
+  bottom: 18px;
+  right: 18px;
+  animation: playerWatermarkMove 18s linear infinite alternate-reverse;
+}
+
+.acc-playerToolbar{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.acc-playerToolbar__meta{
+  display:grid;
+  gap: 6px;
+}
+
+.acc-playerToolbar__title{
+  font-size: 1.06rem;
+  font-weight: 1000;
+  color: var(--text);
+}
+
+.acc-playerToolbar__sub{
+  color: var(--muted);
+  font-weight: 900;
+  line-height: 1.8;
+}
+
+.acc-playerToolbar__actions{
+  display:flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.acc-playerNotice{
+  padding: 12px 14px;
+  border-radius: 16px;
+  border: 1px dashed rgba(44,123,229,.35);
+  background: rgba(44,123,229,.08);
+  color: var(--text);
+  font-weight: 900;
+  line-height: 1.8;
+}
+
+.acc-pdfViewer{
+  min-height: 620px;
+}
+
+.acc-screenWatermark{
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 20;
+  overflow: hidden;
+}
+
+.acc-screenWatermark__chip{
+  position: absolute;
+}
+
+.acc-screenWatermark__chip--one{
+  top: 18%;
+  right: 8%;
+  animation: viewportWatermarkOne 18s linear infinite alternate;
+}
+
+.acc-screenWatermark__chip--two{
+  bottom: 14%;
+  left: 10%;
+  animation: viewportWatermarkTwo 20s linear infinite alternate;
+}
+
+@keyframes playerWatermarkMove{
+  0%{ transform: translate(0, 0); }
+  100%{ transform: translate(-120px, 170px); }
+}
+
+@keyframes viewportWatermarkOne{
+  0%{ transform: translate(0, 0); }
+  100%{ transform: translate(-160px, 130px); }
+}
+
+@keyframes viewportWatermarkTwo{
+  0%{ transform: translate(0, 0); }
+  100%{ transform: translate(180px, -140px); }
+}
+
+@media (max-width: 860px){
+  .acc-playerSurface{ min-height: 240px; }
+  .acc-pdfViewer{ min-height: 420px; }
+}
+
+@media (max-width: 640px){
+  .acc-playerToolbar{
+    align-items:stretch;
+  }
+
+  .acc-playerToolbar__actions{
+    width: 100%;
+  }
+
+  .acc-playerToolbar__actions .acc-modal-btn{
+    flex: 1 1 180px;
+    justify-content:center;
+  }
+
+  .acc-screenWatermark__chip{
+    font-size: .82rem;
+    padding: 7px 12px;
+  }
+}
