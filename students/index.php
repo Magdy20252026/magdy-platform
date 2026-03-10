@@ -310,7 +310,7 @@ function footer_icon_svg(string $key): string {
                 <?php if ($imgUrl): ?>
                   <img class="grade-cardx__img" src="<?php echo h($imgUrl); ?>" alt="<?php echo h($name); ?>">
                 <?php else: ?>
-                  <div class="grade-cardx__img" style="display:grid;place-items:center;height:240px;color:#999;font-weight:1000;">بدون صورة</div>
+                  <div class="grade-cardx__img" style="display:grid;place-items:center;height:240px;color:var(--muted);font-weight:1000;">بدون صورة</div>
                 <?php endif; ?>
                 <div class="grade-cardx__overlay" aria-hidden="true"></div>
               </div>

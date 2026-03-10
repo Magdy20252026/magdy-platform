@@ -23,9 +23,9 @@
   min-height: 290px;
   text-align: center;
 
-  border: 1.5px solid rgba(0,0,0,.22);
-  background: #fff;
-  color: #0b1b1f;
+  border: 1.5px solid var(--border);
+  background: var(--card-bg);
+  color: var(--text);
 
   box-shadow: 0 18px 38px rgba(0,0,0,.10);
   position: relative;
@@ -36,7 +36,7 @@
 }
 
 .fc-card--dark{
-  background: #0b7b7a;
+  background: var(--primary);
   color: #fff;
   border-color: rgba(255,255,255,.18);
 }
