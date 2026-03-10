@@ -18,7 +18,12 @@ function lecture_video_api_response(array $payload): void {
   exit;
 }
 
-if ($studentId <= 0 || $videoId <= 0 || !in_array($action, ['start', 'complete'], true)) {
+const LECTURE_VIDEO_HEARTBEAT_INTERVAL_SECONDS = 10;
+// Allows one heartbeat window plus a 10-second grace period
+// to prevent large idle gaps from inflating watch time.
+const LECTURE_VIDEO_MAX_WATCH_TIME_INCREMENT_SECONDS = LECTURE_VIDEO_HEARTBEAT_INTERVAL_SECONDS + 10;
+
+if ($studentId <= 0 || $videoId <= 0 || !in_array($action, ['start', 'heartbeat', 'complete'], true)) {
   lecture_video_api_response(['ok' => false, 'message' => 'طلب غير صالح.']);
 }
 
@@ -73,6 +78,8 @@ if ($action === 'start') {
     'video_id' => $videoId,
     'lecture_id' => $lectureId,
     'started_at' => time(),
+    'last_ping_at' => time(),
+    'watched_seconds' => 0,
     'half_seconds' => $halfSeconds,
     'counted' => false,
   ];
@@ -97,6 +104,7 @@ if ($action === 'start') {
     'message' => 'تم تجهيز الفيديو داخل المنصة.',
     'watch_token' => $token,
     'half_seconds' => $halfSeconds,
+    'watched_seconds' => 0,
     'player_html' => $playerHtml,
     'stats' => $stats,
     'video' => [
@@ -134,17 +142,41 @@ if (!empty($watch['counted'])) {
     'ok' => true,
     'message' => 'تم احتساب هذه المشاهدة بالفعل.',
     'counted' => true,
+    'watched_seconds' => max(0, (int)($watch['watched_seconds'] ?? $halfSeconds)),
+    'half_seconds' => max(5, (int)($watch['half_seconds'] ?? $halfSeconds)),
     'stats' => $stats,
   ]);
 }
 
-$elapsed = time() - (int)($watch['started_at'] ?? time());
-if ($elapsed < max(5, (int)($watch['half_seconds'] ?? $halfSeconds))) {
-  lecture_video_api_response([
-    'ok' => false,
+$now = time();
+$startedAt = (int)($watch['started_at'] ?? $now);
+$lastPingAt = (int)($watch['last_ping_at'] ?? $startedAt);
+// Session recreation after a refresh or timeout recovery can leave
+// a stale ping timestamp; normalize it so watch time never starts
+// before the actual session start.
+if ($lastPingAt < $startedAt) $lastPingAt = $startedAt;
+
+$watchedSeconds = max(0, (int)($watch['watched_seconds'] ?? 0));
+$delta = max(0, $now - $lastPingAt);
+if ($delta > LECTURE_VIDEO_MAX_WATCH_TIME_INCREMENT_SECONDS) $delta = LECTURE_VIDEO_MAX_WATCH_TIME_INCREMENT_SECONDS;
+if ($delta > 0) {
+  $watchedSeconds += $delta;
+}
+
+$requiredSeconds = max(5, (int)($watch['half_seconds'] ?? $halfSeconds));
+$_SESSION['lecture_video_watch'][$token]['last_ping_at'] = $now;
+$_SESSION['lecture_video_watch'][$token]['watched_seconds'] = $watchedSeconds;
+
+if ($watchedSeconds < $requiredSeconds) {
+  $payload = [
+    'ok' => ($action === 'heartbeat'),
     'message' => 'لم يصل زمن المشاهدة إلى الحد المطلوب بعد.',
+    'counted' => false,
+    'watched_seconds' => $watchedSeconds,
+    'half_seconds' => $requiredSeconds,
     'stats' => $stats,
-  ]);
+  ];
+  lecture_video_api_response($payload);
 }
 
 $result = student_increment_video_watch($pdo, $studentId, $videoId, (int)$stats['allowed']);
@@ -157,10 +189,14 @@ if (!$result['ok']) {
 }
 
 $_SESSION['lecture_video_watch'][$token]['counted'] = true;
+$_SESSION['lecture_video_watch'][$token]['watched_seconds'] = max($watchedSeconds, $requiredSeconds);
+$_SESSION['lecture_video_watch'][$token]['last_ping_at'] = $now;
 
 lecture_video_api_response([
   'ok' => true,
   'message' => 'تم احتساب مشاهدة الفيديو بنجاح.',
   'counted' => true,
+  'watched_seconds' => max($watchedSeconds, $requiredSeconds),
+  'half_seconds' => $requiredSeconds,
   'stats' => $result,
 ]);
