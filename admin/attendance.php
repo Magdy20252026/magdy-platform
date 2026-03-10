@@ -380,7 +380,7 @@ if (($_POST['action'] ?? '') === 'close_session') {
   $sessionId = (int)($_POST['session_id'] ?? 0);
   if ($sessionId > 0) {
     $pdo->prepare('UPDATE attendance_sessions SET is_open=0 WHERE id=?')->execute([$sessionId]);
-    header('Location: attendance.php?session_id=' . $sessionId . '&closed=1');
+    header('Location: attendance.php?closed=1');
     exit;
   }
 }
@@ -455,7 +455,14 @@ $sessions = $pdo->query("
 ")->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
 $selectedSessionId = (int)($_GET['session_id'] ?? 0);
-if ($selectedSessionId <= 0 && !empty($sessions)) $selectedSessionId = (int)$sessions[0]['id'];
+if ($selectedSessionId <= 0 && !empty($sessions)) {
+  foreach ($sessions as $sessionItem) {
+    if ((int)($sessionItem['is_open'] ?? 0) === 1) {
+      $selectedSessionId = (int)$sessionItem['id'];
+      break;
+    }
+  }
+}
 $selectedSession = null;
 foreach ($sessions as $sessionItem) {
   if ((int)$sessionItem['id'] === $selectedSessionId) { $selectedSession = $sessionItem; break; }
