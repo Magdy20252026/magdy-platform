@@ -2,8 +2,8 @@
 
 تم إضافة مشروعين Android Studio جاهزين لاستخراج ملفي APK:
 
-- `/home/runner/work/magdy-platform/magdy-platform/android-admin`
-- `/home/runner/work/magdy-platform/magdy-platform/android-student`
+- `./android-admin`
+- `./android-student`
 
 ## قبل استخراج APK
 
