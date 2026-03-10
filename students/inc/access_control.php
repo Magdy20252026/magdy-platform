@@ -295,10 +295,14 @@ function student_decrypt_video_iframe(?string $cipherBase64, ?string $ivHex): st
 function student_build_video_player_html(array $videoRow, string $origin = ''): string {
   $iframeHtml = student_decrypt_video_iframe($videoRow['embed_iframe_enc'] ?? null, $videoRow['embed_iframe_iv'] ?? null);
   if ($iframeHtml === '') $iframeHtml = (string)($videoRow['embed_iframe'] ?? '');
+  $iframeHtml = trim($iframeHtml);
 
   $src = student_extract_iframe_src($iframeHtml);
   $src = student_normalize_video_src($src, (string)($videoRow['video_type'] ?? ''), $origin);
-  if ($src === '') return '';
+  if ($src === '') {
+    if ($iframeHtml === '') return '';
+    return '<div class="acc-embeddedHtml" id="lectureVideoEmbed">' . $iframeHtml . '</div>';
+  }
 
   $title = htmlspecialchars((string)($videoRow['title'] ?? 'مشغل الفيديو'), ENT_QUOTES, 'UTF-8');
   $srcAttr = htmlspecialchars($src, ENT_QUOTES, 'UTF-8');

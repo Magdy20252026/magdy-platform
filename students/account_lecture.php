@@ -728,6 +728,53 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
     }
   }
 
+  function mountPlayerHtml(html) {
+    if (!surface) return Promise.resolve();
+
+    surface.innerHTML = '';
+
+    if (!html) {
+      return Promise.resolve();
+    }
+
+    var host = document.createElement('div');
+    host.className = 'acc-playerEmbedHost';
+    host.innerHTML = html;
+    surface.appendChild(host);
+
+    var scripts = Array.prototype.slice.call(host.querySelectorAll('script'));
+    return scripts.reduce(function(chain, oldScript){
+      return chain.then(function(){
+        return new Promise(function(resolve){
+          if (!oldScript.parentNode) {
+            resolve();
+            return;
+          }
+
+          var newScript = document.createElement('script');
+          Array.prototype.slice.call(oldScript.attributes).forEach(function(attr){
+            newScript.setAttribute(attr.name, attr.value);
+          });
+
+          var scriptText = oldScript.text || oldScript.textContent || '';
+          if (newScript.src) {
+            newScript.async = false;
+            newScript.onload = resolve;
+            newScript.onerror = resolve;
+          } else {
+            newScript.text = scriptText;
+          }
+
+          oldScript.parentNode.replaceChild(newScript, oldScript);
+
+          if (!newScript.src) {
+            resolve();
+          }
+        });
+      });
+    }, Promise.resolve());
+  }
+
   function syncVideoStats(videoId, stats) {
     var video = videoMap[String(videoId)];
     if (!video || !stats) return;
@@ -858,10 +905,11 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
       setPlayerStageVisible(true);
       activeWatchToken = data.watch_token || '';
       countedToken = '';
-      if (surface) surface.innerHTML = data.player_html || '';
-      if (data.stats) syncVideoStats(selectedVideoId, data.stats);
-      startCountdown(parseInt(data.half_seconds || video.half_watch_seconds || 30, 10));
-      updateNotice('▶️ تم تشغيل الفيديو داخل بلاير المنصة. سيتم احتساب المشاهدة عند الوصول إلى نصف الوقت المحدد.', false);
+      mountPlayerHtml(data.player_html || '').then(function(){
+        if (data.stats) syncVideoStats(selectedVideoId, data.stats);
+        startCountdown(parseInt(data.half_seconds || video.half_watch_seconds || 30, 10));
+        updateNotice('▶️ تم تشغيل الفيديو داخل بلاير المنصة. سيتم احتساب المشاهدة عند الوصول إلى نصف الوقت المحدد.', false);
+      });
     }).catch(function(){
       if (startBtn) {
         startBtn.disabled = false;
