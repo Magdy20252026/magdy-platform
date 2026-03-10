@@ -192,7 +192,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
         <?php if (!empty($stats['blocked'])): ?>
           ⛔ لا يمكن تشغيل هذا الفيديو لأن عدد المشاهدات المسموحة انتهى.
         <?php else: ?>
-          🔒 هذه الصفحة محمية: تم تعطيل الكليك اليمين واختصارات أدوات المطور، وسيتم إغلاق الصفحة إذا تم اكتشاف فتح أدوات المطور.
+          🔒 هذه الصفحة محمية: تم تعطيل الكليك اليمين واختصارات أدوات المطور، وسيتم الرجوع فورًا إلى صفحة تفاصيل المحاضرة إذا تم اكتشاف فتح أدوات المطور.
         <?php endif; ?>
       </div>
     </section>
@@ -476,11 +476,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
       document.exitFullscreen().catch(function(){});
     }
 
-    window.setTimeout(function(){
-      try { window.open('', '_self'); } catch (e) {}
-      try { window.close(); } catch (e) {}
-      window.location.replace('account_lecture.php?lecture_id=' + lectureId);
-    }, 150);
+    window.location.replace('account_lecture.php?lecture_id=' + lectureId);
   }
 
   if (startBtn) {
@@ -511,7 +507,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
       (e.ctrlKey && key === 'u');
     if (blocked) {
       e.preventDefault();
-      closeProtectedPage('⛔ تم إغلاق الصفحة لحماية المحتوى عند محاولة فتح أدوات المطور.');
+      closeProtectedPage('⛔ تم الرجوع إلى صفحة تفاصيل المحاضرة لحماية المحتوى عند محاولة فتح أدوات المطور.');
     }
   }, true);
 
@@ -552,7 +548,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
     }
 
     if (devtoolsDetectionStrikes >= devtoolsStrikeThreshold) {
-      closeProtectedPage('⛔ تم اكتشاف فتح أدوات المطور، وتم إغلاق الصفحة لحماية الفيديو.');
+      closeProtectedPage('⛔ تم اكتشاف فتح أدوات المطور، وتم الرجوع إلى صفحة تفاصيل المحاضرة لحماية الفيديو.');
     }
   }, devtoolsCheckIntervalMs);
 })();
