@@ -191,6 +191,9 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
           <button class="acc-modal-btn acc-modal-btn--ghost" type="button" id="lecturePlayerCtrlBack" aria-label="الرجوع 10 ثواني" disabled>⏪ رجوع 10ث</button>
           <button class="acc-modal-btn acc-modal-btn--ghost" type="button" id="lecturePlayerCtrlForward" aria-label="التقديم 10 ثواني" disabled>⏩ تقديم 10ث</button>
           <button class="acc-modal-btn acc-modal-btn--ghost" type="button" id="lecturePlayerCtrlFullscreen" aria-label="تكبير شاشة المشغل" disabled>⛶ تكبير</button>
+          <label class="acc-platformControls__label" for="lecturePlayerCtrlTimeline">الوقت</label>
+          <input class="acc-platformControls__range acc-platformControls__timeline" id="lecturePlayerCtrlTimeline" type="range" min="0" max="0" step="1" value="0" aria-label="التحكم في وقت الفيديو" aria-valuetext="00:00 / 00:00" disabled>
+          <span class="acc-platformControls__time" id="lecturePlayerCtrlTimeLabel" aria-live="polite">00:00 / 00:00</span>
           <label class="acc-platformControls__label" for="lecturePlayerCtrlVolume">الصوت</label>
           <input class="acc-platformControls__range" id="lecturePlayerCtrlVolume" type="range" min="0" max="100" step="1" value="100" aria-label="مستوى صوت الفيديو" aria-valuetext="100%" disabled>
           <label class="acc-platformControls__label" for="lecturePlayerCtrlQuality">الجودة</label>
@@ -246,6 +249,8 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   var ctrlBackBtn = document.getElementById('lecturePlayerCtrlBack');
   var ctrlForwardBtn = document.getElementById('lecturePlayerCtrlForward');
   var ctrlFullscreenBtn = document.getElementById('lecturePlayerCtrlFullscreen');
+  var ctrlTimelineInput = document.getElementById('lecturePlayerCtrlTimeline');
+  var ctrlTimeLabel = document.getElementById('lecturePlayerCtrlTimeLabel');
   var ctrlVolumeInput = document.getElementById('lecturePlayerCtrlVolume');
   var ctrlQualitySelect = document.getElementById('lecturePlayerCtrlQuality');
   var ctrlSpeedSelect = document.getElementById('lecturePlayerCtrlSpeed');
@@ -261,6 +266,8 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   var devtoolsDetectionStrikes = 0;
   var youtubePlayer = null;
   var youtubeApiReadyPromise = null;
+  var youtubeTimeHandle = 0;
+  var timelineDragging = false;
   // tuned for typical browser UI gaps so docked DevTools detection triggers before playback continues
   const devtoolsWidthGapThreshold = 160;
   const devtoolsHeightGapThreshold = 140;
@@ -338,7 +345,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   }
 
   function setPlatformControlsEnabled(enabled) {
-    [ctrlPlayPauseBtn, ctrlBackBtn, ctrlForwardBtn, ctrlFullscreenBtn, ctrlVolumeInput, ctrlQualitySelect, ctrlSpeedSelect].forEach(function(el){
+    [ctrlPlayPauseBtn, ctrlBackBtn, ctrlForwardBtn, ctrlFullscreenBtn, ctrlTimelineInput, ctrlVolumeInput, ctrlQualitySelect, ctrlSpeedSelect].forEach(function(el){
       if (el) el.disabled = !enabled;
     });
   }
@@ -354,6 +361,50 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
       if (visible) playerStage.classList.add('acc-playerStage--platformControls');
       else playerStage.classList.remove('acc-playerStage--platformControls');
     }
+  }
+
+  function formatClock(seconds) {
+    var total = Math.max(0, Math.floor(parseFloat(seconds) || 0));
+    var hours = Math.floor(total / 3600);
+    var minutes = Math.floor((total % 3600) / 60);
+    var secs = total % 60;
+    var pad = function(n){ return n < 10 ? '0' + n : String(n); };
+    if (hours > 0) return hours + ':' + pad(minutes) + ':' + pad(secs);
+    return pad(minutes) + ':' + pad(secs);
+  }
+
+  function stopYoutubeTimeTicker() {
+    if (youtubeTimeHandle) {
+      window.clearInterval(youtubeTimeHandle);
+      youtubeTimeHandle = 0;
+    }
+  }
+
+  function refreshYoutubeTimeControl(force) {
+    if (!ctrlTimelineInput || !ctrlTimeLabel) return;
+
+    var current = 0;
+    var duration = 0;
+    if (youtubePlayer) {
+      try { current = youtubePlayer.getCurrentTime() || 0; } catch(e) {}
+      try { duration = youtubePlayer.getDuration() || 0; } catch(e) {}
+    }
+
+    if (!isFinite(current)) current = 0;
+    if (!isFinite(duration) || duration < 0) duration = 0;
+    current = Math.max(0, current);
+    if (duration > 0) current = Math.min(current, duration);
+
+    ctrlTimelineInput.max = String(Math.max(0, Math.floor(duration)));
+    if (!timelineDragging || force) {
+      ctrlTimelineInput.value = String(Math.floor(current));
+    }
+
+    var displayedCurrent = force ? Math.floor(ctrlTimelineInput.value || 0) : Math.floor(current);
+    if (!isFinite(displayedCurrent)) displayedCurrent = 0;
+    if (duration > 0) displayedCurrent = Math.min(displayedCurrent, Math.floor(duration));
+    ctrlTimeLabel.textContent = formatClock(displayedCurrent) + ' / ' + formatClock(duration);
+    ctrlTimelineInput.setAttribute('aria-valuetext', ctrlTimeLabel.textContent);
   }
 
   function loadYoutubeApi() {
@@ -450,15 +501,22 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
             refreshYoutubeQualityOptions();
             refreshYoutubeSpeedOptions();
             refreshYoutubeVolumeControl();
+            refreshYoutubeTimeControl(false);
+            stopYoutubeTimeTicker();
+            youtubeTimeHandle = window.setInterval(function(){
+              refreshYoutubeTimeControl(false);
+            }, 500);
           },
           onStateChange: function(event){
             setPlayPauseLabel(event && event.data === youtubeStatePlaying);
+            refreshYoutubeTimeControl(false);
           }
         }
       });
     }).catch(function(){
       setPlatformControlsVisible(false);
       setPlatformControlsEnabled(false);
+      stopYoutubeTimeTicker();
     });
   }
 
@@ -615,6 +673,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
           initYoutubePlatformControls(mountedFrame);
         } else {
           youtubePlayer = null;
+          stopYoutubeTimeTicker();
           setPlatformControlsVisible(false);
           setPlatformControlsEnabled(false);
         }
@@ -735,6 +794,35 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
       } else {
         youtubePlayer.unMute();
         youtubePlayer.setVolume(nextVolume);
+      }
+    });
+  }
+
+  if (ctrlTimelineInput) {
+    ctrlTimelineInput.addEventListener('input', function(){
+      if (!youtubePlayer) return;
+      timelineDragging = true;
+      var nextTime = parseInt(ctrlTimelineInput.value || '0', 10);
+      if (!isFinite(nextTime)) nextTime = 0;
+      var duration = 0;
+      try { duration = youtubePlayer.getDuration() || 0; } catch(e) {}
+      if (isFinite(duration) && duration > 0) nextTime = Math.min(nextTime, Math.floor(duration));
+      nextTime = Math.max(0, nextTime);
+      youtubePlayer.seekTo(nextTime, true);
+      refreshYoutubeTimeControl(true);
+    });
+
+    var finishTimelineDrag = function(){
+      timelineDragging = false;
+      refreshYoutubeTimeControl(false);
+    };
+    ctrlTimelineInput.addEventListener('change', finishTimelineDrag);
+    ctrlTimelineInput.addEventListener('mouseup', finishTimelineDrag);
+    ctrlTimelineInput.addEventListener('touchend', finishTimelineDrag);
+    ctrlTimelineInput.addEventListener('keyup', function(e){
+      var key = String(e.key || '').toLowerCase();
+      if (key === 'arrowleft' || key === 'arrowright' || key === 'home' || key === 'end') {
+        finishTimelineDrag();
       }
     });
   }

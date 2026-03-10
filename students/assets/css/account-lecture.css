@@ -338,6 +338,20 @@
   width: 130px;
 }
 
+.acc-platformControls__timeline{
+  width: min(260px, 42vw);
+  min-width: 150px;
+}
+
+.acc-platformControls__time{
+  font-weight: 900;
+  color: var(--text);
+  direction: ltr;
+  font-variant-numeric: tabular-nums;
+  min-width: 110px;
+  text-align: center;
+}
+
 .acc-playerStage--platformControls .acc-playerSurface::after{
   content: '';
   position: absolute;
