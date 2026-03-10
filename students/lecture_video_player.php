@@ -402,6 +402,16 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
     }, captureShieldDurationMs);
   }
 
+  function isCaptureShortcutEvent(e) {
+    var key = String((e && e.key) || '').toLowerCase();
+    if (!key) return false;
+    if (key === 'printscreen' || key === 'snapshot') return true;
+    if (e && e.metaKey && e.shiftKey && (key === '3' || key === '4' || key === '5' || key === 's')) return true;
+    if (e && e.ctrlKey && e.shiftKey && (key === 's' || key === 'printscreen')) return true;
+    if (e && e.altKey && key === 'printscreen') return true;
+    return false;
+  }
+
   function setPlatformControlsVisible(visible) {
     if (platformControls) platformControls.hidden = !visible;
     if (playerStage && playerStage.classList) {
@@ -955,8 +965,9 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   document.addEventListener('mousedown', function(e){ if (e.button === 2) e.preventDefault(); }, true);
   document.addEventListener('keydown', function(e){
     var key = String(e.key || '').toLowerCase();
-    if (key === 'printscreen' || (e.metaKey && e.shiftKey && (key === '3' || key === '4' || key === '5'))) {
+    if (isCaptureShortcutEvent(e)) {
       triggerCaptureShield('⚫️ تم تعتيم المشغل لحماية المحتوى أثناء محاولة تصوير الشاشة.');
+      sendProgress('heartbeat');
     }
     var blocked =
       key === 'f12' ||
@@ -967,6 +978,11 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
       closeProtectedPage('⛔ تم الرجوع إلى صفحة تفاصيل المحاضرة لحماية المحتوى عند محاولة فتح أدوات المطور.');
     }
   }, true);
+  document.addEventListener('keyup', function(e){
+    if (!isCaptureShortcutEvent(e)) return;
+    triggerCaptureShield('⚫️ تم تعتيم المشغل لحماية المحتوى أثناء محاولة تصوير الشاشة.');
+    sendProgress('heartbeat');
+  }, true);
 
   document.addEventListener('visibilitychange', function(){
     if (document.visibilityState === 'hidden') {
@@ -974,6 +990,13 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
       sendProgress('heartbeat');
       return;
     }
+    hideCaptureShield();
+  });
+  window.addEventListener('blur', function(){
+    triggerCaptureShield('⚫️ تم تعتيم المشغل تلقائيًا لحماية المحتوى عند محاولة تصوير أو تسجيل الشاشة.');
+    sendProgress('heartbeat');
+  });
+  window.addEventListener('focus', function(){
     hideCaptureShield();
   });
 
