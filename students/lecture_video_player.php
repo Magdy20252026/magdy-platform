@@ -486,8 +486,8 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
       youtubePlayer = new window.YT.Player(frame.id, {
         events: {
           onReady: function(){
-            setPlatformControlsVisible(false);
-            setPlatformControlsEnabled(false);
+            setPlatformControlsVisible(true);
+            setPlatformControlsEnabled(true);
             setPlayPauseLabel(false);
             refreshYoutubeQualityOptions();
             refreshYoutubeSpeedOptions();
