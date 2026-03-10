@@ -203,8 +203,20 @@ function attendance_auto_enroll_student(PDO $pdo, array $session, int $studentId
     $stmt->execute([$lectureId]);
     $lectureRow = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
     if (!$lectureRow) return;
+    $courseIdFromLecture = (int)($lectureRow['course_id'] ?? 0);
+    if ($courseIdFromLecture <= 0) return;
 
     $pdo->beginTransaction();
+
+    $stmt = $pdo->prepare("
+      INSERT IGNORE INTO student_course_enrollments (student_id, course_id, access_type)
+      VALUES (?, ?, ?)
+    ");
+    $stmt->execute([
+      $studentId,
+      $courseIdFromLecture,
+      attendance_course_enrollment_access_type((string)($lectureRow['course_access_type'] ?? 'attendance')),
+    ]);
 
     $stmt = $pdo->prepare("
       INSERT IGNORE INTO student_lecture_enrollments
@@ -214,7 +226,7 @@ function attendance_auto_enroll_student(PDO $pdo, array $session, int $studentId
     $stmt->execute([
       $studentId,
       $lectureId,
-      (int)($lectureRow['course_id'] ?? 0),
+      $courseIdFromLecture,
       attendance_lecture_enrollment_access_type((string)($lectureRow['course_access_type'] ?? 'attendance')),
     ]);
     $pdo->commit();
