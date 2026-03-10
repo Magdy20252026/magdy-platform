@@ -5,6 +5,7 @@ import android.content.Intent
 import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
+import android.util.Log
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
@@ -21,13 +22,21 @@ import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.FileProvider
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.core.view.isVisible
+import androidx.lifecycle.lifecycleScope
 import com.google.android.material.progressindicator.LinearProgressIndicator
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.UUID
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class MainActivity : AppCompatActivity() {
     private lateinit var webView: WebView
@@ -36,7 +45,18 @@ class MainActivity : AppCompatActivity() {
     private var customView: View? = null
     private var customViewCallback: WebChromeClient.CustomViewCallback? = null
     private var customViewContainer: FrameLayout? = null
-    private var originalSystemUiVisibility: Int = 0
+
+    companion object {
+        private const val TAG = "MainActivity"
+        private const val PDF_CONNECT_TIMEOUT_MS = 15_000
+        private const val PDF_READ_TIMEOUT_MS = 30_000
+        private const val PDF_CACHE_DIR_NAME = "lecture-pdfs"
+        private const val PDF_FILENAME_PREFIX = "lecture-"
+        private const val PDF_FILE_EXTENSION = "pdf"
+        private const val FILE_PROVIDER_SUFFIX = ".fileprovider"
+        private const val LECTURE_PDF_VIEWER_FILENAME = "lecture_pdf_viewer.php"
+        private const val LECTURE_PDF_FILENAME = "lecture_pdf.php"
+    }
 
     private val fileChooserLauncher =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -135,11 +155,11 @@ class MainActivity : AppCompatActivity() {
                 }
 
                 val decorView = window.decorView as? ViewGroup ?: run {
+                    Log.w(TAG, "Unable to enter fullscreen because decorView is not a ViewGroup.")
                     callback?.onCustomViewHidden()
                     return
                 }
 
-                originalSystemUiVisibility = decorView.systemUiVisibility
                 customView = view
                 customViewCallback = callback
                 customViewContainer = FrameLayout(this@MainActivity).apply {
@@ -162,13 +182,12 @@ class MainActivity : AppCompatActivity() {
                 )
                 webView.isVisible = false
                 progressIndicator.isVisible = false
-                decorView.systemUiVisibility =
-                    View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
-                        View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
-                        View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
-                        View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
-                        View.SYSTEM_UI_FLAG_FULLSCREEN or
-                        View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                WindowCompat.setDecorFitsSystemWindows(window, false)
+                WindowInsetsControllerCompat(window, decorView).apply {
+                    systemBarsBehavior =
+                        WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                    hide(WindowInsetsCompat.Type.systemBars())
+                }
             }
 
             override fun onHideCustomView() {
@@ -257,7 +276,10 @@ class MainActivity : AppCompatActivity() {
         customView = null
         customViewCallback?.onCustomViewHidden()
         customViewCallback = null
-        decorView?.systemUiVisibility = originalSystemUiVisibility
+        decorView?.let {
+            WindowCompat.setDecorFitsSystemWindows(window, true)
+            WindowInsetsControllerCompat(window, it).show(WindowInsetsCompat.Type.systemBars())
+        }
         webView.isVisible = true
     }
 
@@ -266,21 +288,24 @@ class MainActivity : AppCompatActivity() {
         progressIndicator.isVisible = true
         progressIndicator.progress = 0
 
-        Thread {
-            val result = runCatching { downloadPdfToCache(pdfUri) }
-            runOnUiThread {
-                progressIndicator.isVisible = false
-                result.onSuccess { file ->
-                    openDownloadedPdf(file)
-                }.onFailure {
-                    Toast.makeText(
-                        this,
-                        R.string.pdf_open_failed,
-                        Toast.LENGTH_SHORT
-                    ).show()
+        lifecycleScope.launch {
+            val result = runCatching {
+                withContext(Dispatchers.IO) {
+                    downloadPdfToCache(pdfUri)
                 }
             }
-        }.start()
+            if (isFinishing || isDestroyed) return@launch
+            progressIndicator.isVisible = false
+            result.onSuccess { file ->
+                openDownloadedPdf(file)
+            }.onFailure {
+                Toast.makeText(
+                    this@MainActivity,
+                    R.string.pdf_open_failed,
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+        }
 
         return true
     }
@@ -289,23 +314,30 @@ class MainActivity : AppCompatActivity() {
         val originalPath = uri.path ?: return null
         val path = originalPath.lowercase()
         return when {
-            path.endsWith("/lecture_pdf_viewer.php") -> {
+            path.endsWith("/$LECTURE_PDF_VIEWER_FILENAME") -> {
+                val lastSlashIndex = originalPath.lastIndexOf('/')
+                val directPdfPath = if (lastSlashIndex >= 0) {
+                    originalPath.substring(0, lastSlashIndex + 1) + LECTURE_PDF_FILENAME
+                } else {
+                    LECTURE_PDF_FILENAME
+                }
                 uri.buildUpon()
-                    .path(originalPath.replace("lecture_pdf_viewer.php", "lecture_pdf.php"))
+                    .path(directPdfPath)
                     .build()
             }
-            path.endsWith("/lecture_pdf.php") || path.endsWith(".pdf") -> uri
+            path.endsWith("/$LECTURE_PDF_FILENAME") || path.endsWith(".$PDF_FILE_EXTENSION") -> uri
             else -> null
         }
     }
 
     private fun downloadPdfToCache(uri: Uri): File {
-        val connection = (URL(uri.toString()).openConnection() as HttpURLConnection).apply {
+        val requestUrl = uri.toString().trim()
+        val connection = (URL(requestUrl).openConnection() as HttpURLConnection).apply {
             instanceFollowRedirects = true
-            connectTimeout = 15000
-            readTimeout = 30000
+            connectTimeout = PDF_CONNECT_TIMEOUT_MS
+            readTimeout = PDF_READ_TIMEOUT_MS
             requestMethod = "GET"
-            val cookies = CookieManager.getInstance().getCookie(uri.toString())
+            val cookies = CookieManager.getInstance().getCookie(requestUrl)
             if (!cookies.isNullOrBlank()) {
                 setRequestProperty("Cookie", cookies)
             }
@@ -319,8 +351,8 @@ class MainActivity : AppCompatActivity() {
                 throw IOException("Unexpected response code: ${connection.responseCode}")
             }
 
-            val targetDir = File(cacheDir, "lecture-pdfs").apply { mkdirs() }
-            val targetFile = File(targetDir, "lecture-${System.currentTimeMillis()}.pdf")
+            val targetDir = preparePdfCacheDir()
+            val targetFile = File(targetDir, "$PDF_FILENAME_PREFIX${UUID.randomUUID()}.$PDF_FILE_EXTENSION")
             connection.inputStream.use { input ->
                 FileOutputStream(targetFile).use { output ->
                     input.copyTo(output)
@@ -336,7 +368,7 @@ class MainActivity : AppCompatActivity() {
     private fun openDownloadedPdf(file: File) {
         val pdfUri = FileProvider.getUriForFile(
             this,
-            "${BuildConfig.APPLICATION_ID}.fileprovider",
+            "${BuildConfig.APPLICATION_ID}$FILE_PROVIDER_SUFFIX",
             file
         )
 
@@ -355,5 +387,27 @@ class MainActivity : AppCompatActivity() {
                 Toast.LENGTH_SHORT
             ).show()
         }
+    }
+
+    @Throws(IOException::class)
+    private fun preparePdfCacheDir(): File {
+        val targetDir = File(cacheDir, PDF_CACHE_DIR_NAME)
+        if (!targetDir.exists() && !targetDir.mkdirs()) {
+            throw IOException("Unable to create PDF cache directory: ${targetDir.absolutePath}")
+        }
+
+        targetDir.listFiles()?.forEach { cachedFile ->
+            if (
+                cachedFile.isFile &&
+                cachedFile.name.startsWith(PDF_FILENAME_PREFIX) &&
+                cachedFile.extension.equals(PDF_FILE_EXTENSION, ignoreCase = true)
+            ) {
+                if (!cachedFile.delete() && cachedFile.exists()) {
+                    Log.w(TAG, "Failed to delete stale PDF cache: ${cachedFile.absolutePath}")
+                }
+            }
+        }
+
+        return targetDir
     }
 }
