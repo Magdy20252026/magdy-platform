@@ -212,10 +212,6 @@ if ($isLectureOpen && !empty($videos)) {
     $videoRow['is_blocked'] = (bool)$stats['blocked'];
     $videoRow['half_watch_seconds'] = student_video_half_watch_seconds((int)($videoRow['duration_minutes'] ?? 0));
 
-    if ($selectedVideoId <= 0 && !$videoRow['is_blocked']) {
-      $selectedVideoId = $videoId;
-    }
-
     $videosForJs[] = [
       'id' => $videoId,
       'title' => (string)($videoRow['title'] ?? ''),
@@ -230,13 +226,6 @@ if ($isLectureOpen && !empty($videos)) {
   }
   unset($videoRow);
 
-  if ($selectedVideoId <= 0 && !empty($videos)) {
-    $selectedVideoId = (int)($videos[0]['id'] ?? 0);
-  }
-}
-
-if ($isLectureOpen && !empty($pdfs)) {
-  $selectedPdfId = (int)($pdfs[0]['id'] ?? 0);
 }
 
 /* lecture price show */
@@ -382,7 +371,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
       <?php else: ?>
         <?php if ($isLectureOpen): ?>
           <div class="acc-playerShell">
-            <div class="acc-playerStage" id="lecturePlayerStage">
+            <div class="acc-playerStage" id="lecturePlayerStage" hidden>
               <div class="acc-playerSurface" id="lecturePlayerSurface">
                 <div class="acc-playerPlaceholder" id="lecturePlayerPlaceholder">
                   اختر الفيديو من القائمة ثم اضغط <b>ابدأ المشاهدة</b> ليتم تشغيله داخل بلاير المنصة.
@@ -401,7 +390,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
 
               <div class="acc-playerToolbar__actions">
                 <button class="acc-modal-btn acc-modal-btn--primary" type="button" id="lecturePlayerStartBtn">▶️ ابدأ المشاهدة</button>
-                <button class="acc-modal-btn acc-modal-btn--ghost" type="button" id="lecturePlayerFullscreenBtn">⛶ تكبير البلاير</button>
+                <button class="acc-modal-btn acc-modal-btn--ghost" type="button" id="lecturePlayerFullscreenBtn" disabled>⛶ تكبير البلاير</button>
               </div>
             </div>
 
@@ -474,7 +463,10 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
       <?php else: ?>
         <?php if ($isLectureOpen): ?>
           <div class="acc-pdfShell">
-            <div class="acc-pdfViewer">
+            <div class="acc-pdfPlaceholder" id="lecturePdfPlaceholder">
+              اختر ملف الـ PDF المطلوب ثم اضغط <b>عرض</b> لفتحه داخل المحاضرة.
+            </div>
+            <div class="acc-pdfViewer" id="lecturePdfViewer" hidden>
               <iframe
                 id="lecturePdfFrame"
                 title="Lecture PDF"
@@ -485,40 +477,41 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
                 <span class="acc-pdfOverlay__chip"><?php echo h($studentWatermark); ?></span>
               </div>
             </div>
-            <div class="acc-playerNotice">📑 يتم عرض ملف الـ PDF داخل المحاضرة مباشرة بدون الخروج من المنصة.</div>
+            <div class="acc-playerNotice">📑 يتم فتح ملف الـ PDF داخل المحاضرة فقط بعد الضغط على زر "عرض".</div>
           </div>
         <?php endif; ?>
 
         <div class="acc-itemsList acc-itemsList--media">
           <?php foreach ($pdfs as $p): ?>
             <?php $pdfId = (int)($p['id'] ?? 0); ?>
-            <button
+            <div
               class="acc-item acc-item--media<?php echo ($selectedPdfId === $pdfId ? ' is-active' : ''); ?>"
-              type="button"
-              <?php if ($isLectureOpen): ?>
-                data-pdf-select
-                data-pdf-id="<?php echo $pdfId; ?>"
-                data-pdf-title="<?php echo h((string)$p['title']); ?>"
-              <?php else: ?>
-                disabled
-              <?php endif; ?>
             >
               <div class="acc-item__body">
                 <div class="acc-item__title">📑 <?php echo h((string)$p['title']); ?></div>
                 <?php if ($isLectureOpen): ?>
                   <div class="acc-item__meta">✅ متاح داخل المحاضرة</div>
-                  <div class="acc-item__badge">عرض الملف الآن</div>
+                  <div class="acc-item__badge">لن يتم فتح الملف إلا بعد الضغط على عرض</div>
                 <?php else: ?>
                   <div class="acc-item__meta">🔒 مقفول</div>
                 <?php endif; ?>
               </div>
 
-              <?php if ($isLectureOpen): ?>
-                <div class="acc-item__lock">✅</div>
-              <?php else: ?>
-                <div class="acc-item__lock">🔒</div>
-              <?php endif; ?>
-            </button>
+              <div class="acc-item__side">
+                <?php if ($isLectureOpen): ?>
+                  <button
+                    class="acc-modal-btn acc-modal-btn--ghost"
+                    type="button"
+                    data-pdf-select
+                    data-pdf-id="<?php echo $pdfId; ?>"
+                    data-pdf-title="<?php echo h((string)$p['title']); ?>"
+                  >عرض</button>
+                  <div class="acc-item__lock">✅</div>
+                <?php else: ?>
+                  <div class="acc-item__lock">🔒</div>
+                <?php endif; ?>
+              </div>
+            </div>
           <?php endforeach; ?>
         </div>
       <?php endif; ?>
@@ -621,6 +614,8 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   var fullscreenBtn = document.getElementById('lecturePlayerFullscreenBtn');
   var playerStage = document.getElementById('lecturePlayerStage');
   var pdfFrame = document.getElementById('lecturePdfFrame');
+  var pdfViewer = document.getElementById('lecturePdfViewer');
+  var pdfPlaceholder = document.getElementById('lecturePdfPlaceholder');
 
   var activeWatchToken = '';
   var countedToken = '';
@@ -644,6 +639,16 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
     noticeEl.textContent = text;
     noticeEl.style.borderColor = isError ? 'rgba(207,42,55,.35)' : 'rgba(44,123,229,.35)';
     noticeEl.style.background = isError ? 'rgba(207,42,55,.08)' : 'rgba(44,123,229,.08)';
+  }
+
+  function setPlayerStageVisible(isVisible) {
+    if (playerStage) playerStage.hidden = !isVisible;
+    if (fullscreenBtn) fullscreenBtn.disabled = !isVisible;
+  }
+
+  function setPdfViewerVisible(isVisible) {
+    if (pdfViewer) pdfViewer.hidden = !isVisible;
+    if (pdfPlaceholder) pdfPlaceholder.hidden = !!isVisible;
   }
 
   function renderSelection() {
@@ -776,14 +781,18 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   function startCurrentVideo() {
     var video = videoMap[String(selectedVideoId)] || null;
     if (!video) {
-      renderPlaceholder('من فضلك اختر فيديو من القائمة أولاً.');
+      setPlayerStageVisible(false);
+      updateNotice('⚠️ من فضلك اختر فيديو من القائمة أولاً ثم اضغط "ابدأ المشاهدة".', true);
       return;
     }
     if (video.is_blocked) {
-      renderPlaceholder('انتهت عدد المشاهدات المسموحة لهذا الفيديو.');
+      setPlayerStageVisible(false);
       updateNotice('⛔ انتهت عدد المشاهدات المسموحة لهذا الفيديو، ولن يتم تشغيله.', true);
       return;
     }
+
+    setPlayerStageVisible(true);
+    renderPlaceholder('⏳ جاري تجهيز الفيديو داخل المنصة...');
 
     if (startBtn) {
       startBtn.disabled = true;
@@ -807,12 +816,13 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
       }
 
       if (!data || !data.ok) {
-        renderPlaceholder(escapeHtml((data && data.message) || 'تعذر تشغيل الفيديو داخل المنصة.'));
+        setPlayerStageVisible(false);
         if (data && data.stats) syncVideoStats(selectedVideoId, data.stats);
         updateNotice('⛔ ' + ((data && data.message) || 'تعذر تشغيل الفيديو داخل المنصة.'), true);
         return;
       }
 
+      setPlayerStageVisible(true);
       activeWatchToken = data.watch_token || '';
       countedToken = '';
       if (surface) surface.innerHTML = data.player_html || '';
@@ -824,7 +834,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
         startBtn.disabled = false;
         startBtn.textContent = '▶️ ابدأ المشاهدة';
       }
-      renderPlaceholder('تعذر الاتصال بسيرفر الفيديو الآن. حاول مرة أخرى.');
+      setPlayerStageVisible(false);
       updateNotice('❌ حدث خطأ في الاتصال أثناء تجهيز الفيديو.', true);
     });
   }
@@ -835,6 +845,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
       if (!nextId || nextId === selectedVideoId) return;
       completeWatchIfReady(false);
       selectedVideoId = nextId;
+      setPlayerStageVisible(false);
       renderPlaceholder('تم اختيار فيديو جديد. اضغط <b>ابدأ المشاهدة</b> لتشغيله داخل المنصة.');
       renderSelection();
     });
@@ -844,8 +855,10 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
     btn.addEventListener('click', function(){
       var nextId = parseInt(btn.getAttribute('data-pdf-id') || '0', 10);
       if (!nextId || !pdfFrame) return;
+      setPdfViewerVisible(true);
       document.querySelectorAll('[data-pdf-select]').forEach(function(other){
-        other.classList.toggle('is-active', other === btn);
+        var item = other.closest('.acc-item');
+        if (item) item.classList.toggle('is-active', other === btn);
       });
       pdfFrame.src = 'lecture_pdf.php?pdf_id=' + nextId + '#toolbar=0&navpanes=0&scrollbar=0';
     });
@@ -892,6 +905,8 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   document.addEventListener('contextmenu', function(e){ e.preventDefault(); });
   document.addEventListener('mousedown', function(e){ if (e.button === 2) e.preventDefault(); }, true);
 
+  setPlayerStageVisible(false);
+  setPdfViewerVisible(false);
   renderPlaceholder('اختر الفيديو من القائمة ثم اضغط <b>ابدأ المشاهدة</b> ليتم تشغيله داخل بلاير المنصة.');
   renderSelection();
 })();
