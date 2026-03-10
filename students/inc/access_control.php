@@ -277,13 +277,13 @@ function student_normalize_video_src(string $src, string $videoType, string $ori
 
     $embed = 'https://www.youtube-nocookie.com/embed/' . rawurlencode($videoId);
     $params = [
-      'controls' => 0,
-      'disablekb' => 1,
+      'controls' => 1,
+      'disablekb' => 0,
       'rel' => 0,
       'modestbranding' => 1,
       'playsinline' => 1,
       'iv_load_policy' => 3,
-      'fs' => 0,
+      'fs' => 1,
       'enablejsapi' => 1,
     ];
     if ($origin !== '') $params['origin'] = $origin;
