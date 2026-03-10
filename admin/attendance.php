@@ -161,6 +161,41 @@ function attendance_export_excel(string $filename, array $rows, string $type): v
   <?php
   exit;
 }
+function attendance_render_table(array $rows, int $sessionId, int $highlightedStudentId, string $emptyMessage): void {
+  if (!$rows) {
+    echo '<div class="empty">' . h($emptyMessage) . '</div>';
+    return;
+  }
+  ?>
+  <div class="att-tableWrap">
+    <table class="table att-table">
+      <thead><tr><th>الطالب</th><th>الباركود</th><th>الهاتف</th><th>الحالة</th><th>آخر واجب</th><th>حالة الواجب</th><th>درجة الواجب</th><th>آخر امتحان</th><th>حالة الامتحان</th><th>درجة الامتحان</th><th>إجراء</th></tr></thead>
+      <tbody>
+        <?php foreach ($rows as $row): ?>
+          <tr <?php echo ($highlightedStudentId === (int)$row['id']) ? 'class="is-highlighted"' : ''; ?>>
+            <td data-label="الطالب"><strong><?php echo h((string)$row['full_name']); ?></strong><div class="mini"><?php echo h((string)($row['center_name'] ?? '')); ?> / <?php echo h((string)($row['group_name'] ?? '')); ?></div></td>
+            <td data-label="الباركود"><?php echo h((string)($row['barcode'] ?? '')); ?></td>
+            <td data-label="الهاتف"><?php echo h((string)($row['student_phone'] ?? '')); ?></td>
+            <td data-label="الحالة" class="<?php echo !empty($row['is_present']) ? 'badge-present' : 'badge-absent'; ?>"><?php echo h((string)$row['attendance_text']); ?></td>
+            <td data-label="آخر واجب"><?php echo h((string)$row['assignment_name']); ?></td>
+            <td data-label="حالة الواجب"><?php echo h((string)$row['assignment_status']); ?></td>
+            <td data-label="درجة الواجب"><?php echo h((string)$row['assignment_score_text']); ?></td>
+            <td data-label="آخر امتحان"><?php echo h((string)$row['exam_name']); ?></td>
+            <td data-label="حالة الامتحان"><?php echo h((string)$row['exam_status']); ?></td>
+            <td data-label="درجة الامتحان"><?php echo h((string)$row['exam_score_text']); ?></td>
+            <td data-label="إجراء" class="actions">
+              <div class="table-actions">
+                <form method="post"><input type="hidden" name="action" value="mark_manual"><input type="hidden" name="session_id" value="<?php echo $sessionId; ?>"><input type="hidden" name="student_id" value="<?php echo (int)$row['id']; ?>"><input type="hidden" name="attendance_status" value="present"><button class="btn ghost" type="submit">✅ حاضر</button></form>
+                <form method="post"><input type="hidden" name="action" value="mark_manual"><input type="hidden" name="session_id" value="<?php echo $sessionId; ?>"><input type="hidden" name="student_id" value="<?php echo (int)$row['id']; ?>"><input type="hidden" name="attendance_status" value="absent"><button class="btn danger" type="submit">❌ غائب</button></form>
+              </div>
+            </td>
+          </tr>
+        <?php endforeach; ?>
+      </tbody>
+    </table>
+  </div>
+  <?php
+}
 
 $adminId = (int)($_SESSION['admin_id'] ?? 0);
 $adminRole = (string)($_SESSION['admin_role'] ?? 'مشرف');
@@ -311,6 +346,7 @@ foreach ($sessions as $sessionItem) {
 $attendanceRows = $selectedSession ? attendance_fetch_session_students($pdo, $selectedSession) : [];
 $presentRows = array_values(array_filter($attendanceRows, fn($r) => !empty($r['is_present'])));
 $absentRows = array_values(array_filter($attendanceRows, fn($r) => empty($r['is_present'])));
+$highlightedStudentId = (int)($_GET['student'] ?? 0);
 
 if ($selectedSession && isset($_GET['export'])) {
   $type = (string)$_GET['export'];
@@ -360,12 +396,14 @@ if ($adminRole !== 'مدير') {
   <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@700;800;900;1000&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="assets/css/dashboard.css"><link rel="stylesheet" href="assets/css/centers.css">
   <style>
-    .att-grid{display:grid;grid-template-columns:420px 1fr;gap:16px}.att-card{background:var(--panel);border:1px solid var(--line);border-radius:22px;padding:18px;box-shadow:0 12px 28px rgba(0,0,0,.08)}
+    .att-grid{display:grid;grid-template-columns:minmax(320px,420px) minmax(0,1fr);gap:16px;align-items:start}.att-grid>*,.att-card{min-width:0}.att-card{background:var(--panel);border:1px solid var(--line);border-radius:22px;padding:18px;box-shadow:0 12px 28px rgba(0,0,0,.08)}
     .att-form{display:grid;gap:12px}.att-form input,.att-form select{width:100%;border:1px solid var(--line);border-radius:14px;padding:12px;background:var(--panel);color:var(--text);font:inherit}
-    .att-row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.att-summary{display:flex;gap:10px;flex-wrap:wrap;margin:12px 0}.pill{display:inline-flex;align-items:center;gap:6px;padding:8px 12px;border-radius:999px;background:rgba(59,130,246,.08);font-weight:1000}
-    .scan-box{display:grid;gap:10px}.scan-controls{display:flex;gap:10px;flex-wrap:wrap}.scan-video{width:100%;border-radius:18px;border:1px solid var(--line);background:#111;display:none}.session-list{display:grid;gap:12px;margin-top:12px}.session-item{display:block;text-decoration:none;color:inherit;padding:14px;border-radius:16px;border:1px solid var(--line);background:rgba(15,23,42,.04)}.session-item.is-active{border-color:var(--brand);background:rgba(59,130,246,.08)}
-    .att-tableWrap{overflow:auto}.att-table td,.att-table th{white-space:nowrap}.badge-present{color:#16a34a;font-weight:1000}.badge-absent{color:#dc2626;font-weight:1000}.mini{color:var(--muted);font-weight:900}.table-actions{display:flex;gap:8px;flex-wrap:wrap}.empty{padding:20px;border:1px dashed var(--line);border-radius:18px;color:var(--muted);font-weight:900;text-align:center}
-    @media (max-width:1200px){.att-grid{grid-template-columns:1fr}}@media (max-width:720px){.att-row{grid-template-columns:1fr}}
+    .att-row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.att-summary{display:flex;gap:10px;flex-wrap:wrap;margin:12px 0;align-items:center}.pill{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:8px 12px;border-radius:999px;background:rgba(59,130,246,.08);font-weight:1000;border:1px solid transparent}
+    .pill-action{cursor:pointer;font:inherit;color:inherit;border-color:var(--line);background:rgba(239,68,68,.08)}.pill-action:hover{filter:brightness(1.02)}.pill-present{background:rgba(34,197,94,.12)}
+    .scan-box{display:grid;gap:10px}.scan-controls{display:flex;gap:10px;flex-wrap:wrap;align-items:stretch}.scan-controls>*{min-width:0}.scan-video{width:100%;border-radius:18px;border:1px solid var(--line);background:#111;display:none}.session-list{display:grid;gap:12px;margin-top:12px}.session-item{display:block;text-decoration:none;color:inherit;padding:14px;border-radius:16px;border:1px solid var(--line);background:rgba(15,23,42,.04)}.session-item.is-active{border-color:var(--brand);background:rgba(59,130,246,.08)}
+    #barcodeInput{flex:1 1 240px;min-width:0 !important;width:100%}.attendance-section{display:grid;gap:12px;margin-top:16px}.attendance-section[hidden]{display:none !important}.att-section-head{display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap}.att-section-title{margin:0;font-size:20px}.att-panel-close{margin-inline-start:auto}
+    .att-tableWrap{overflow:auto;max-width:100%;border:1px solid var(--line);border-radius:18px}.att-table{min-width:960px}.att-table td,.att-table th{white-space:nowrap}.att-table tr.is-highlighted{background:rgba(34,197,94,.08)}.badge-present{color:#16a34a;font-weight:1000}.badge-absent{color:#dc2626;font-weight:1000}.mini{color:var(--muted);font-weight:900}.table-actions{display:flex;gap:8px;flex-wrap:wrap}.empty{padding:20px;border:1px dashed var(--line);border-radius:18px;color:var(--muted);font-weight:900;text-align:center}
+    @media (max-width:1200px){.att-grid{grid-template-columns:1fr}}@media (max-width:720px){.att-row,.scan-controls{grid-template-columns:1fr;display:grid}.att-summary{flex-direction:column;align-items:stretch}.pill,.pill-action,.att-summary .btn,.scan-controls .btn{width:100%}.att-section-title{font-size:18px}.table td.actions .table-actions{flex-direction:column}.table td.actions .table-actions form,.table td.actions .table-actions .btn{width:100%}}
   </style>
 </head>
 <body class="app" data-theme="auto">
@@ -430,8 +468,8 @@ if ($adminRole !== 'مدير') {
           </div>
 
           <div class="att-summary">
-            <span class="pill">✅ الحاضرون: <?php echo count($presentRows); ?></span>
-            <span class="pill">❌ الغائبون: <?php echo count($absentRows); ?></span>
+            <span class="pill pill-present">✅ الحاضرون: <?php echo count($presentRows); ?></span>
+            <button class="pill pill-action" type="button" id="absentToggle" aria-expanded="false" aria-controls="absentStudentsPanel">❌ الغائبون: <?php echo count($absentRows); ?></button>
             <a class="btn ghost" href="attendance.php?session_id=<?php echo (int)$selectedSession['id']; ?>&export=present">⬇️ كشف الحضور Excel</a>
             <a class="btn ghost" href="attendance.php?session_id=<?php echo (int)$selectedSession['id']; ?>&export=absent">⬇️ كشف الغياب Excel</a>
           </div>
@@ -453,35 +491,21 @@ if ($adminRole !== 'مدير') {
           </div>
           <?php endif; ?>
 
-          <div class="att-tableWrap" style="margin-top:16px;">
-            <?php if (!$attendanceRows): ?><div class="empty">لا يوجد طلاب سنتر مسجلون داخل هذه المجموعة.</div><?php else: ?>
-            <table class="table att-table">
-              <thead><tr><th>الطالب</th><th>الباركود</th><th>الهاتف</th><th>الحالة</th><th>آخر واجب</th><th>حالة الواجب</th><th>درجة الواجب</th><th>آخر امتحان</th><th>حالة الامتحان</th><th>درجة الامتحان</th><th>إجراء</th></tr></thead>
-              <tbody>
-                <?php foreach ($attendanceRows as $row): ?>
-                  <tr <?php echo ((int)($_GET['student'] ?? 0) === (int)$row['id']) ? 'style="background:rgba(34,197,94,.08);"' : ''; ?>>
-                    <td><strong><?php echo h((string)$row['full_name']); ?></strong><div class="mini"><?php echo h((string)($row['center_name'] ?? '')); ?> / <?php echo h((string)($row['group_name'] ?? '')); ?></div></td>
-                    <td><?php echo h((string)($row['barcode'] ?? '')); ?></td>
-                    <td><?php echo h((string)($row['student_phone'] ?? '')); ?></td>
-                    <td class="<?php echo !empty($row['is_present']) ? 'badge-present' : 'badge-absent'; ?>"><?php echo h((string)$row['attendance_text']); ?></td>
-                    <td><?php echo h((string)$row['assignment_name']); ?></td>
-                    <td><?php echo h((string)$row['assignment_status']); ?></td>
-                    <td><?php echo h((string)$row['assignment_score_text']); ?></td>
-                    <td><?php echo h((string)$row['exam_name']); ?></td>
-                    <td><?php echo h((string)$row['exam_status']); ?></td>
-                    <td><?php echo h((string)$row['exam_score_text']); ?></td>
-                    <td>
-                      <div class="table-actions">
-                        <form method="post"><input type="hidden" name="action" value="mark_manual"><input type="hidden" name="session_id" value="<?php echo (int)$selectedSession['id']; ?>"><input type="hidden" name="student_id" value="<?php echo (int)$row['id']; ?>"><input type="hidden" name="attendance_status" value="present"><button class="btn ghost" type="submit">✅ حاضر</button></form>
-                        <form method="post"><input type="hidden" name="action" value="mark_manual"><input type="hidden" name="session_id" value="<?php echo (int)$selectedSession['id']; ?>"><input type="hidden" name="student_id" value="<?php echo (int)$row['id']; ?>"><input type="hidden" name="attendance_status" value="absent"><button class="btn danger" type="submit">❌ غائب</button></form>
-                      </div>
-                    </td>
-                  </tr>
-                <?php endforeach; ?>
-              </tbody>
-            </table>
-            <?php endif; ?>
-          </div>
+          <section class="attendance-section">
+            <div class="att-section-head">
+              <h4 class="att-section-title">✅ الطلاب الحاضرون</h4>
+              <p class="mini" style="margin:0;">يظهر هذا الجدول أسفل الباركود للطلاب الذين تم تسجيل حضورهم فقط.</p>
+            </div>
+            <?php attendance_render_table($presentRows, (int)$selectedSession['id'], $highlightedStudentId, $attendanceRows ? 'لم يتم تسجيل أي طالب حاضر بعد.' : 'لا يوجد طلاب سنتر مسجلون داخل هذه المجموعة.'); ?>
+          </section>
+
+          <section class="attendance-section" id="absentStudentsPanel" hidden>
+            <div class="att-section-head">
+              <h4 class="att-section-title">❌ الطلاب الغائبون</h4>
+              <button class="btn ghost att-panel-close" type="button" id="closeAbsentPanel">إغلاق جدول الغياب</button>
+            </div>
+            <?php attendance_render_table($absentRows, (int)$selectedSession['id'], $highlightedStudentId, $attendanceRows ? 'لا يوجد طلاب غائبون حالياً.' : 'لا يوجد طلاب سنتر مسجلون داخل هذه المجموعة.'); ?>
+          </section>
         <?php endif; ?>
       </div>
     </div>
@@ -680,6 +704,22 @@ if ($adminRole !== 'مدير') {
   barcodeInput && barcodeInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && scanMethod) scanMethod.value = 'barcode';
   });
+
+  const absentToggle = document.getElementById('absentToggle');
+  const absentPanel = document.getElementById('absentStudentsPanel');
+  const closeAbsentPanel = document.getElementById('closeAbsentPanel');
+
+  function setAbsentPanel(open) {
+    if (!absentPanel || !absentToggle) return;
+    absentPanel.hidden = !open;
+    absentToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (open) absentPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  absentToggle && absentToggle.addEventListener('click', () => {
+    setAbsentPanel(absentPanel ? absentPanel.hidden : false);
+  });
+  closeAbsentPanel && closeAbsentPanel.addEventListener('click', () => setAbsentPanel(false));
 })();
 </script>
 </body>
