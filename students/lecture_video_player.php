@@ -295,8 +295,11 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   const youtubeStatePlaying = 1;
   const captureShieldDurationMs = 5200;
   const captureShieldMinHoldMs = 3200;
+  const captureShieldDebounceMs = 350;
+  const blurCheckDelayMs = 120;
   var captureShieldHandle = 0;
   var captureShieldVisibleUntil = 0;
+  var lastCaptureShieldTriggerAt = 0;
 
   function ensureValidHalfSeconds(nextValue) {
     return Math.max(5, parseInt(nextValue || videoState.halfSeconds || fallbackHalfSeconds, 10));
@@ -400,6 +403,24 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
       hideCaptureShield();
       if (playerStage && playerStage.classList) playerStage.classList.remove('acc-playerStage--captureBlocked');
     }, captureShieldDurationMs);
+  }
+
+  function isCaptureShortcutEvent(e) {
+    var key = String((e && e.key) || '').toLowerCase();
+    if (!key) return false;
+    if (key === 'printscreen' || key === 'snapshot') return true;
+    if (e && e.metaKey && e.shiftKey && (key === '3' || key === '4' || key === '5' || key === 's')) return true;
+    if (e && e.ctrlKey && e.shiftKey && (key === 's' || key === 'printscreen')) return true;
+    if (e && e.altKey && key === 'printscreen') return true;
+    return false;
+  }
+
+  function triggerCaptureShieldAttempt(reason) {
+    var now = Date.now();
+    if (now - lastCaptureShieldTriggerAt < captureShieldDebounceMs) return;
+    lastCaptureShieldTriggerAt = now;
+    triggerCaptureShield(reason);
+    sendProgress('heartbeat');
   }
 
   function setPlatformControlsVisible(visible) {
@@ -955,8 +976,8 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   document.addEventListener('mousedown', function(e){ if (e.button === 2) e.preventDefault(); }, true);
   document.addEventListener('keydown', function(e){
     var key = String(e.key || '').toLowerCase();
-    if (key === 'printscreen' || (e.metaKey && e.shiftKey && (key === '3' || key === '4' || key === '5'))) {
-      triggerCaptureShield('⚫️ تم تعتيم المشغل لحماية المحتوى أثناء محاولة تصوير الشاشة.');
+    if (isCaptureShortcutEvent(e)) {
+      triggerCaptureShieldAttempt('⚫️ تم تعتيم المشغل لحماية المحتوى أثناء محاولة تصوير الشاشة.');
     }
     var blocked =
       key === 'f12' ||
@@ -967,6 +988,10 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
       closeProtectedPage('⛔ تم الرجوع إلى صفحة تفاصيل المحاضرة لحماية المحتوى عند محاولة فتح أدوات المطور.');
     }
   }, true);
+  document.addEventListener('keyup', function(e){
+    if (!isCaptureShortcutEvent(e)) return;
+    triggerCaptureShieldAttempt('⚫️ تم تعتيم المشغل لحماية المحتوى أثناء محاولة تصوير الشاشة.');
+  }, true);
 
   document.addEventListener('visibilitychange', function(){
     if (document.visibilityState === 'hidden') {
@@ -975,6 +1000,12 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
       return;
     }
     hideCaptureShield();
+  });
+  window.addEventListener('blur', function(){
+    window.setTimeout(function(){
+      if (document.visibilityState !== 'hidden') return;
+      triggerCaptureShieldAttempt('⚫️ تم تعتيم المشغل تلقائيًا لحماية المحتوى عند محاولة تصوير أو تسجيل الشاشة.');
+    }, blurCheckDelayMs);
   });
 
   window.addEventListener('beforeunload', function(){
