@@ -308,6 +308,31 @@
   background: rgba(44,123,229,.06);
 }
 
+.acc-platformControls__group{
+  display:flex;
+  align-items:center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.acc-platformControls__group--actions{
+  flex: 1 1 300px;
+}
+
+.acc-platformControls__group--timeline{
+  flex: 2 1 340px;
+}
+
+.acc-platformControls__group--audio{
+  flex: 1 1 170px;
+}
+
+.acc-platformControls__iconBtn{
+  min-height: 42px;
+  border-radius: 999px;
+  font-weight: 900;
+}
+
 .acc-viewerFrameShell .acc-playerStage .acc-platformControls{
   position: absolute;
   inset-inline: 10px;
@@ -339,7 +364,7 @@
 }
 
 .acc-platformControls__timeline{
-  width: min(260px, 42vw);
+  width: min(310px, 44vw);
   min-width: 150px;
 }
 
@@ -350,6 +375,11 @@
   font-variant-numeric: tabular-nums;
   min-width: 110px;
   text-align: center;
+}
+
+.acc-platformControls__timeline,
+.acc-platformControls__range{
+  accent-color: var(--primary);
 }
 
 .acc-playerStage--platformControls .acc-playerSurface::after{
@@ -493,6 +523,19 @@
   .acc-playerToolbar__actions .acc-modal-btn{
     flex: 1 1 180px;
     justify-content:center;
+  }
+
+  .acc-platformControls__group{
+    width: 100%;
+  }
+
+  .acc-platformControls__group--actions .acc-modal-btn{
+    flex: 1 1 130px;
+  }
+
+  .acc-platformControls__timeline{
+    width: 100%;
+    min-width: 0;
   }
 
   .acc-screenWatermark__chip{
