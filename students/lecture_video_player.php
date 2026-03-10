@@ -977,14 +977,6 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
     hideCaptureShield();
   });
 
-  window.addEventListener('blur', function(){
-    triggerCaptureShield('⚫️ تم تعتيم المشغل تلقائيًا لحماية المحتوى عند محاولة تصوير الشاشة.');
-  });
-
-  window.addEventListener('focus', function(){
-    hideCaptureShield();
-  });
-
   window.addEventListener('beforeunload', function(){
     if (!activeWatchToken || countedToken === activeWatchToken) return;
     var body = new URLSearchParams();
