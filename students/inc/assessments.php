@@ -223,6 +223,20 @@ function student_assessment_resolve_duration_minutes(int $attemptDurationMinutes
   return 1;
 }
 
+function student_assessment_resolve_remaining_seconds(array $attempt, int $durationMinutes): int {
+  $attemptStatus = (string)($attempt['status'] ?? '');
+  if ($attemptStatus !== 'in_progress') return 0;
+
+  $startedAtTs = isset($attempt['started_at_ts']) ? (int)$attempt['started_at_ts'] : 0;
+  $nowTs = isset($attempt['db_now_ts']) ? (int)$attempt['db_now_ts'] : time();
+
+  if ($startedAtTs <= 0 || $durationMinutes <= 0) {
+    return 0;
+  }
+
+  return max(0, ($startedAtTs + ($durationMinutes * 60)) - $nowTs);
+}
+
 function student_assessment_normalize_attempt_timing(PDO $pdo, string $type, int $studentId, ?int $attemptId = null): void {
   $cfg = student_assessment_type_config($type);
   if (!$cfg || $studentId <= 0) return;
@@ -522,6 +536,8 @@ function student_assessment_fetch_attempt_payload(PDO $pdo, string $type, int $a
         a.questions_total,
         a.questions_per_student,
         a.created_at AS assessment_created_at,
+        UNIX_TIMESTAMP(att.started_at) AS started_at_ts,
+        UNIX_TIMESTAMP(NOW()) AS db_now_ts,
         g.name AS grade_name,
         b.name AS bank_name
       FROM {$cfg['attempt_table']} att
@@ -623,15 +639,16 @@ function student_assessment_fetch_attempt_payload(PDO $pdo, string $type, int $a
     $startedAt = trim((string)($attempt['started_at'] ?? ''));
     $durationMinutes = (int)($attempt['duration_minutes'] ?? 0);
     $assessmentDurationMinutes = (int)($attempt['assessment_duration_minutes'] ?? 0);
-    $startedAtTs = strtotime($startedAt);
-    $shouldResetStartedAt = ($attemptStatus === 'in_progress' && ($startedAt === '' || $startedAtTs === false));
+    $startedAtTs = isset($attempt['started_at_ts']) ? (int)$attempt['started_at_ts'] : 0;
+    $shouldResetStartedAt = ($attemptStatus === 'in_progress' && ($startedAt === '' || $startedAtTs <= 0));
     $resolvedDurationMinutes = student_assessment_resolve_duration_minutes($durationMinutes, $assessmentDurationMinutes);
     $shouldResetDuration = ($attemptStatus === 'in_progress' && $durationMinutes !== $resolvedDurationMinutes);
 
     if ($shouldResetStartedAt) {
       $startedAt = date('Y-m-d H:i:s');
       $attempt['started_at'] = $startedAt;
-      $startedAtTs = strtotime($startedAt);
+      $startedAtTs = time();
+      $attempt['started_at_ts'] = $startedAtTs;
     }
     if ($shouldResetDuration) {
       $durationMinutes = $resolvedDurationMinutes;
@@ -663,10 +680,7 @@ function student_assessment_fetch_attempt_payload(PDO $pdo, string $type, int $a
       }
     }
 
-    $remainingSeconds = 0;
-    if ($startedAtTs !== false && $durationMinutes > 0) {
-      $remainingSeconds = max(0, ($startedAtTs + ($durationMinutes * 60)) - time());
-    }
+    $remainingSeconds = student_assessment_resolve_remaining_seconds($attempt, $durationMinutes);
 
     return [
       'config' => $cfg,
