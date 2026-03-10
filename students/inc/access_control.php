@@ -190,11 +190,11 @@ function student_extract_iframe_src(string $iframeHtml): string {
   $iframeHtml = trim($iframeHtml);
   if ($iframeHtml === '') return '';
 
-  if (preg_match('/src\s*=\s*([\"\'])(.*?)\1/i', $iframeHtml, $m)) {
+  if (preg_match('/<iframe\b[^>]*\bsrc\s*=\s*([\"\'])(.*?)\1/i', $iframeHtml, $m)) {
     return html_entity_decode((string)$m[2], ENT_QUOTES, 'UTF-8');
   }
 
-  if (preg_match('/src\s*=\s*([^\s>]+)/i', $iframeHtml, $m)) {
+  if (preg_match('/<iframe\b[^>]*\bsrc\s*=\s*([^\s>]+)/i', $iframeHtml, $m)) {
     return html_entity_decode(trim((string)$m[1], "\"'"), ENT_QUOTES, 'UTF-8');
   }
 
@@ -236,6 +236,25 @@ function student_extract_youtube_video_id(string $url): string {
   return '';
 }
 
+function student_extract_vimeo_video_id(string $url): string {
+  $parts = parse_url($url);
+  if (!is_array($parts)) return '';
+
+  $host = strtolower((string)($parts['host'] ?? ''));
+  $path = trim((string)($parts['path'] ?? ''), '/');
+  if ($host === '' || $path === '') return '';
+  if (strpos($host, 'vimeo.com') === false) return '';
+
+  $segments = array_values(array_filter(explode('/', $path), static function ($segment): bool {
+    return $segment !== '';
+  }));
+  if (empty($segments)) return '';
+
+  $candidate = (string)$segments[count($segments) - 1];
+  if (!preg_match('~^\d+$~', $candidate)) return '';
+  return $candidate;
+}
+
 function student_normalize_video_src(string $src, string $videoType, string $origin = ''): string {
   $src = trim(html_entity_decode($src, ENT_QUOTES, 'UTF-8'));
   if ($src === '') return '';
@@ -263,6 +282,11 @@ function student_normalize_video_src(string $src, string $videoType, string $ori
   }
 
   if ($videoType === 'vimeo') {
+    $videoId = student_extract_vimeo_video_id($src);
+    if ($videoId !== '') {
+      $src = 'https://player.vimeo.com/video/' . rawurlencode($videoId);
+    }
+
     return student_append_url_params($src, [
       'title' => 0,
       'byline' => 0,
