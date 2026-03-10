@@ -1003,8 +1003,10 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   });
   window.addEventListener('blur', function(){
     window.setTimeout(function(){
-      if (document.visibilityState !== 'hidden') return;
-      triggerCaptureShieldAttempt('⚫️ تم تعتيم المشغل تلقائيًا لحماية المحتوى عند محاولة تصوير أو تسجيل الشاشة.');
+      var reason = document.visibilityState === 'hidden'
+        ? '⚫️ تم تعتيم المشغل تلقائيًا لحماية المحتوى عند محاولة تصوير أو تسجيل الشاشة.'
+        : '⚫️ تم تعتيم المشغل تلقائيًا لحماية المحتوى عند محاولة تصوير الشاشة أو سحب التركيز من نافذة المشغل.';
+      triggerCaptureShieldAttempt(reason);
     }, blurCheckDelayMs);
   });
 
