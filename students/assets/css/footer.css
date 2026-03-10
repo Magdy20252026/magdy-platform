@@ -128,16 +128,16 @@ html[data-theme="dark"] .footer-copy--dev{
 
 /* ✅ Footer logo bigger */
 .footer__logo{
-  width: 120px;
-  height: 120px;
+  width: clamp(88px, 20vw, 120px);
+  height: clamp(88px, 20vw, 120px);
   object-fit: contain;
   display:block;
   margin-inline-start:auto;
 }
 
 .footer__logoFallback{
-  width: 120px;
-  height: 120px;
+  width: clamp(88px, 20vw, 120px);
+  height: clamp(88px, 20vw, 120px);
   border-radius: 16px;
   background: linear-gradient(135deg,#ddd,#bbb);
   margin-inline-start:auto;

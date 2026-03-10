@@ -236,10 +236,13 @@ html[data-theme="dark"] .auth-toast{
 /* Responsive */
 @media (max-width: 980px){
   .auth-grid{ grid-template-columns: 1fr; }
+  .fgrid{ grid-template-columns: 1fr; }
   .auth-imgPane{ min-height: 260px; order: 1; }
   .auth-formPane{ order: 2; }
 }
 @media (max-width: 560px){
-  .fgrid{ grid-template-columns: 1fr; }
   .auth-formPane{ padding: 22px 14px; }
+}
+@media (max-height: 600px) and (orientation: landscape){
+  .auth-grid{ min-height: auto; }
 }
