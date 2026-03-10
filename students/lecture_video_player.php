@@ -540,8 +540,8 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
 
     var widthGap = Math.abs(window.outerWidth - window.innerWidth);
     var heightGap = Math.abs(window.outerHeight - window.innerHeight);
-    var widthGapDelta = widthGap - baselineWidthGap;
-    var heightGapDelta = heightGap - baselineHeightGap;
+    var widthGapDelta = Math.max(0, widthGap - baselineWidthGap);
+    var heightGapDelta = Math.max(0, heightGap - baselineHeightGap);
     var devtoolsOpen =
       widthGap > devtoolsWidthGapThreshold ||
       heightGap > devtoolsHeightGapThreshold ||
@@ -552,6 +552,8 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
       devtoolsDetectionStrikes++;
     } else {
       devtoolsDetectionStrikes = 0;
+      baselineWidthGap = Math.min(baselineWidthGap, widthGap);
+      baselineHeightGap = Math.min(baselineHeightGap, heightGap);
     }
 
     if (devtoolsDetectionStrikes >= devtoolsStrikeThreshold) {
