@@ -204,6 +204,7 @@ function attendance_auto_enroll_student(PDO $pdo, array $session, int $studentId
     $lectureRow = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
     if (!$lectureRow) return;
     $courseIdFromLecture = (int)($lectureRow['course_id'] ?? 0);
+    $courseAccessType = (string)($lectureRow['course_access_type'] ?? 'attendance');
     if ($courseIdFromLecture <= 0) return;
 
     $pdo->beginTransaction();
@@ -215,7 +216,7 @@ function attendance_auto_enroll_student(PDO $pdo, array $session, int $studentId
     $stmt->execute([
       $studentId,
       $courseIdFromLecture,
-      attendance_course_enrollment_access_type((string)($lectureRow['course_access_type'] ?? 'attendance')),
+      attendance_course_enrollment_access_type($courseAccessType),
     ]);
 
     $stmt = $pdo->prepare("
@@ -227,7 +228,7 @@ function attendance_auto_enroll_student(PDO $pdo, array $session, int $studentId
       $studentId,
       $lectureId,
       $courseIdFromLecture,
-      attendance_lecture_enrollment_access_type((string)($lectureRow['course_access_type'] ?? 'attendance')),
+      attendance_lecture_enrollment_access_type($courseAccessType),
     ]);
     $pdo->commit();
   } catch (Throwable $e) {
