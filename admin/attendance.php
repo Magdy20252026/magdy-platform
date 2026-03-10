@@ -494,7 +494,7 @@ if ($adminRole !== 'مدير') {
           <section class="attendance-section">
             <div class="att-section-head">
               <h4 class="att-section-title">✅ الطلاب الحاضرون</h4>
-              <span class="mini">يظهر هذا الجدول أسفل الباركود للطلاب الذين تم تسجيل حضورهم فقط.</span>
+              <p class="mini" style="margin:0;">يظهر هذا الجدول أسفل الباركود للطلاب الذين تم تسجيل حضورهم فقط.</p>
             </div>
             <?php attendance_render_table($presentRows, (int)$selectedSession['id'], $highlightedStudentId, $attendanceRows ? 'لم يتم تسجيل أي طالب حاضر بعد.' : 'لا يوجد طلاب سنتر مسجلون داخل هذه المجموعة.'); ?>
           </section>
