@@ -316,7 +316,6 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   var fullscreenUnlockHandle = 0;
   var mobileSecureStateResizeHandle = 0;
   var mobileLandscapeLockHandle = 0;
-  var mobileSystemOverlayGraceUntil = 0;
   var initialShieldMessage = '🔒 الفيديو محجوب افتراضيًا للحماية. اضغط على زر فتح المشغل المحمي لعرض الفيديو داخل الصفحة الآمنة. وعلى الموبايل سيظل محجوبًا حتى يتم تفعيل ملء الشاشة.';
   var hiddenShieldMessage = '⚫️ تم تعتيم المشغل تلقائيًا لحماية المحتوى عند محاولة تصوير الشاشة أو مغادرة الصفحة. افتح المشغل المحمي يدويًا للمتابعة.';
   var blurShieldMessage = '⚫️ تم تعتيم المشغل تلقائيًا لحماية المحتوى عند محاولة تصوير الشاشة أو سحب التركيز من نافذة المشغل. افتح المشغل المحمي يدويًا للمتابعة.';
@@ -484,7 +483,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
       document.mozCancelFullScreen ||
       document.msExitFullscreen ||
       null;
-    if (typeof exitFullscreen !== 'function') return null;
+    if (typeof exitFullscreen !== 'function') return Promise.resolve();
     return exitFullscreen.call(document);
   }
 
@@ -512,17 +511,8 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
     return false;
   }
 
-  function hasMobileSystemOverlayGrace() {
-    return false;
-  }
-
   function hasMobileSecurePlaybackState() {
     return isStageFullscreenActive();
-  }
-
-  function refreshMobileSystemOverlayGrace() {
-    mobileSystemOverlayGraceUntil = 0;
-    return false;
   }
 
   function needsMobileLandscapeViewportFallback() {
@@ -556,7 +546,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   }
 
   function hasSecurePlaybackFocus() {
-    // On mobile the player must remain in protected fullscreen; any system overlay should force the shield back on.
+    // On mobile the player must remain in protected fullscreen; any system overlay will force the shield back on.
     if (isLikelyMobilePlayback()) return hasMobileSecurePlaybackState();
     if (document.visibilityState === 'hidden') return false;
     if (!hasDocumentFocus()) return false;
@@ -1037,8 +1027,8 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
         exitSecureFullscreen();
         return;
       }
-      var requestFullscreen = requestSecureFullscreen(playerStage);
-      if (typeof requestFullscreen === 'function') requestFullscreen.call(playerStage);
+      var requestFullscreenFn = requestSecureFullscreen(playerStage);
+      if (typeof requestFullscreenFn === 'function') requestFullscreenFn.call(playerStage);
     };
 
     fullscreenBtn.addEventListener('click', toggleFullscreen);
@@ -1049,7 +1039,6 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
       fullscreenBtn.textContent = fullscreenElement ? '🡼 إنهاء التكبير' : '⛶ تكبير';
       if (ctrlFullscreenBtn) ctrlFullscreenBtn.textContent = fullscreenBtn.textContent;
       if (!fullscreenElement && isLikelyMobilePlayback() && playbackBootstrapped && !protectedPageClosed) {
-        mobileSystemOverlayGraceUntil = 0;
         if (mobileLandscapeLockHandle) {
           window.clearTimeout(mobileLandscapeLockHandle);
           mobileLandscapeLockHandle = 0;
@@ -1057,11 +1046,10 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
         syncMobileLandscapePresentation();
         unlockMobileLandscapeOrientation();
         setCaptureShieldLocked(mobileExitShieldMessage);
-        updateNotice('🔒 تمت إعادة حماية الفيديو بعد الخروج من العرض الآمن أو إظهار طبقة النظام على الموبايل. افتح المشغل المحمي للمتابعة.', true);
+        updateNotice('🔒 تمت إعادة حماية الفيديو بعد الخروج من العرض الآمن على الموبايل. افتح المشغل المحمي للمتابعة.', true);
       } else if (fullscreenElement && isLikelyMobilePlayback() && !protectedPageClosed && !videoState.isBlocked) {
-        refreshMobileSystemOverlayGrace();
         scheduleMobileLandscapeLock(mobileLandscapeLockRetryCount);
-        updateNotice('✅ تم تفعيل العرض الآمن بملء الشاشة على هذا الجهاز. سيتم إجبار العرض الأفقي قدر الإمكان، وحتى إذا ظل الهاتف عموديًا فسيتم تدوير المشغل داخل ملء الشاشة.', false);
+        updateNotice('✅ تم تفعيل العرض الآمن بملء الشاشة على هذا الجهاز. سيعمل الفيديو تلقائيًا بأفضل وضع أفقي متاح أثناء التشغيل، وإن تعذر ذلك فسيستمر العرض الآمن بالشكل المناسب للجهاز.', false);
       } else {
         syncMobileLandscapePresentation();
       }
@@ -1292,10 +1280,6 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
 
   document.addEventListener('visibilitychange', function(){
     if (document.visibilityState === 'hidden') {
-      if (refreshMobileSystemOverlayGrace()) {
-        sendProgress('heartbeat');
-        return;
-      }
       setCaptureShieldLocked(hiddenShieldMessage);
       sendProgress('heartbeat');
       return;
@@ -1306,20 +1290,12 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   });
   window.addEventListener('blur', function(){
     window.setTimeout(function(){
-      if (refreshMobileSystemOverlayGrace()) {
-        sendProgress('heartbeat');
-        return;
-      }
       setCaptureShieldLocked(document.visibilityState === 'hidden' ? recordShieldMessage : blurShieldMessage);
       sendProgress('heartbeat');
     }, blurCheckDelayMs);
   });
   window.addEventListener('pagehide', function(){
     if (protectedPageClosed || videoState.isBlocked) return;
-    if (refreshMobileSystemOverlayGrace()) {
-      sendProgress('heartbeat');
-      return;
-    }
     setCaptureShieldLocked('⚫️ تمت إعادة حجب المشغل مباشرة عند مغادرة الصفحة أو إخفائها لحماية الفيديو.');
     sendProgress('heartbeat');
   });
