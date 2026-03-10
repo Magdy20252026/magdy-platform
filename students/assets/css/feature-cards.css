@@ -80,4 +80,5 @@
 }
 @media (max-width: 520px){
   .feature-cards__grid{ grid-template-columns: 1fr; }
+  .fc-card{ min-height: 240px; }
 }

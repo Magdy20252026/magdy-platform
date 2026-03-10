@@ -1,6 +1,7 @@
 /* ✅ Fixed header (always on top) */
 .site-header{
   padding:14px 0;
+  padding-top: max(14px, env(safe-area-inset-top));
   direction:rtl;
 
   position: fixed;
@@ -15,7 +16,7 @@
 
 /* ✅ عشان محتوى الصفحة ما يطلعش تحت الهيدر */
 body{
-  padding-top: 96px; /* عدّلها لو الهيدر أعلى/أقل */
+  padding-top: calc(96px + max(0px, env(safe-area-inset-top) - 14px)); /* عدّلها لو الهيدر أعلى/أقل */
 }
 
 .site-header__bar{
