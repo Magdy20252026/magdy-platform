@@ -199,6 +199,8 @@ $studentWatermark = $studentCode . ' • ' . $studentName;
 $selectedVideoId = 0;
 $selectedPdfId = 0;
 $videosForJs = [];
+$selectedVideoRow = null;
+$initialVideoPlayerHtml = '';
 
 if ($isLectureOpen && !empty($videos)) {
   student_video_views_ensure_table($pdo);
@@ -232,6 +234,17 @@ if ($isLectureOpen && !empty($videos)) {
 
   if ($selectedVideoId <= 0 && !empty($videos[0]['id'])) {
     $selectedVideoId = (int)$videos[0]['id'];
+  }
+
+  foreach ($videos as $videoRow) {
+    if ((int)($videoRow['id'] ?? 0) === $selectedVideoId) {
+      $selectedVideoRow = $videoRow;
+      break;
+    }
+  }
+
+  if (is_array($selectedVideoRow) && !empty($selectedVideoRow) && empty($selectedVideoRow['is_blocked'])) {
+    $initialVideoPlayerHtml = student_build_video_player_html($selectedVideoRow);
   }
 }
 
@@ -383,11 +396,15 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
       <?php else: ?>
         <?php if ($isLectureOpen): ?>
           <div class="acc-playerShell">
-            <div class="acc-playerStage" id="lecturePlayerStage" hidden>
+            <div class="acc-playerStage" id="lecturePlayerStage"<?php echo ($selectedVideoRow && empty($selectedVideoRow['is_blocked'])) ? '' : ' hidden'; ?>>
               <div class="acc-playerSurface" id="lecturePlayerSurface">
-                <div class="acc-playerPlaceholder" id="lecturePlayerPlaceholder">
-                  اختر الفيديو من القائمة ثم اضغط <b>ابدأ المشاهدة</b> ليتم تشغيله داخل بلاير المنصة.
-                </div>
+                <?php if ($initialVideoPlayerHtml !== ''): ?>
+                  <?php echo $initialVideoPlayerHtml; ?>
+                <?php else: ?>
+                  <div class="acc-playerPlaceholder" id="lecturePlayerPlaceholder">
+                    اختر الفيديو من القائمة ثم اضغط <b>ابدأ المشاهدة</b> ليتم تشغيله داخل بلاير المنصة.
+                  </div>
+                <?php endif; ?>
               </div>
               <div class="acc-playerOverlay">
                 <span class="acc-playerOverlay__chip"><?php echo h($studentWatermark); ?></span>
@@ -396,18 +413,24 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
 
             <div class="acc-playerToolbar">
               <div class="acc-playerToolbar__meta">
-                <div class="acc-playerToolbar__title" id="lecturePlayerTitle">بدون فيديو محدد</div>
-                <div class="acc-playerToolbar__sub" id="lecturePlayerSub">اختر فيديو لعرض المدة والعدد المتبقي من المشاهدات.</div>
+                <div class="acc-playerToolbar__title" id="lecturePlayerTitle"><?php echo $selectedVideoRow ? h((string)($selectedVideoRow['title'] ?? 'فيديو المحاضرة')) : 'بدون فيديو محدد'; ?></div>
+                <div class="acc-playerToolbar__sub" id="lecturePlayerSub"><?php echo $selectedVideoRow ? ('المدة: ' . (int)($selectedVideoRow['duration_minutes'] ?? 0) . ' دقيقة • المتبقي: ' . (int)($selectedVideoRow['views_remaining'] ?? 0) . ' من ' . (int)($selectedVideoRow['views_allowed'] ?? 0)) : 'اختر فيديو لعرض المدة والعدد المتبقي من المشاهدات.'; ?></div>
               </div>
 
               <div class="acc-playerToolbar__actions">
-                <button class="acc-modal-btn acc-modal-btn--primary" type="button" id="lecturePlayerStartBtn">▶️ ابدأ المشاهدة</button>
-                <button class="acc-modal-btn acc-modal-btn--ghost" type="button" id="lecturePlayerFullscreenBtn" disabled>⛶ تكبير البلاير</button>
+                <button class="acc-modal-btn acc-modal-btn--primary" type="button" id="lecturePlayerStartBtn"<?php echo (!$selectedVideoRow || !empty($selectedVideoRow['is_blocked'])) ? ' disabled' : ''; ?>>▶️ ابدأ المشاهدة</button>
+                <button class="acc-modal-btn acc-modal-btn--ghost" type="button" id="lecturePlayerFullscreenBtn"<?php echo ($selectedVideoRow && empty($selectedVideoRow['is_blocked'])) ? '' : ' disabled'; ?>>⛶ تكبير البلاير</button>
               </div>
             </div>
 
             <div class="acc-playerNotice" id="lecturePlayerNotice">
-              ⏱️ يبدأ احتساب المشاهدة من بداية التشغيل ويتم تسجيل مشاهدة واحدة عند الوصول إلى نصف مدة الفيديو المحددة.
+              <?php if ($selectedVideoRow && !empty($selectedVideoRow['is_blocked'])): ?>
+                ⛔ انتهت عدد المشاهدات المسموحة لهذا الفيديو، ولن يتم تشغيله مرة أخرى.
+              <?php elseif ($selectedVideoRow): ?>
+                ▶️ تم تجهيز أول فيديو داخل بلاير المحاضرة تلقائيًا. يتم تسجيل مشاهدة واحدة عند الوصول إلى نصف مدة الفيديو المحددة.
+              <?php else: ?>
+                ⏱️ يبدأ احتساب المشاهدة من بداية التشغيل ويتم تسجيل مشاهدة واحدة عند الوصول إلى نصف مدة الفيديو المحددة.
+              <?php endif; ?>
             </div>
           </div>
         <?php endif; ?>
@@ -475,10 +498,10 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
       <?php else: ?>
         <?php if ($isLectureOpen): ?>
           <div class="acc-pdfShell">
-            <div class="acc-pdfPlaceholder" id="lecturePdfPlaceholder">
+            <div class="acc-pdfPlaceholder" id="lecturePdfPlaceholder"<?php echo $selectedPdfId > 0 ? ' hidden' : ''; ?>>
               اختر ملف الـ PDF المطلوب ثم اضغط <b>عرض</b> لفتحه داخل المحاضرة.
             </div>
-            <div class="acc-pdfViewer" id="lecturePdfViewer" hidden>
+            <div class="acc-pdfViewer" id="lecturePdfViewer"<?php echo $selectedPdfId > 0 ? '' : ' hidden'; ?>>
               <iframe
                 id="lecturePdfFrame"
                 title="Lecture PDF"
@@ -623,6 +646,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   var pdfFrame = document.getElementById('lecturePdfFrame');
   var pdfViewer = document.getElementById('lecturePdfViewer');
   var pdfPlaceholder = document.getElementById('lecturePdfPlaceholder');
+  var hasInitialPlayer = !!(surface && surface.querySelector('iframe'));
 
   var activeWatchToken = '';
   var countedToken = '';
@@ -923,9 +947,11 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   document.addEventListener('contextmenu', function(e){ e.preventDefault(); });
   document.addEventListener('mousedown', function(e){ if (e.button === 2) e.preventDefault(); }, true);
 
-  setPlayerStageVisible(false);
   renderPdfSelection();
-  renderPlaceholder('اختر الفيديو من القائمة ثم اضغط <b>ابدأ المشاهدة</b> ليتم تشغيله داخل بلاير المنصة.');
+  setPlayerStageVisible(!!selectedVideoId);
+  if (!hasInitialPlayer) {
+    renderPlaceholder('اختر الفيديو من القائمة ثم اضغط <b>ابدأ المشاهدة</b> ليتم تشغيله داخل بلاير المنصة.');
+  }
   renderSelection();
   if (selectedVideoId && videoMap[String(selectedVideoId)] && !videoMap[String(selectedVideoId)].is_blocked) {
     startCurrentVideo();
