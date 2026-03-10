@@ -308,6 +308,8 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   const mobileSecureStateResizeDebounceMs = 180;
   const mobileLandscapeLockRetryMs = 220;
   const mobileLandscapeLockRetryCount = 4;
+  const mobileViewportOverlayThresholdPx = 20;
+  const mobileViewportOffsetThresholdPx = 2;
   var captureShieldHandle = 0;
   var captureShieldVisibleUntil = 0;
   var lastCaptureShieldTriggerAt = 0;
@@ -321,7 +323,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   var blurShieldMessage = '⚫️ تم تعتيم المشغل تلقائيًا لحماية المحتوى عند محاولة تصوير الشاشة أو سحب التركيز من نافذة المشغل. افتح المشغل المحمي يدويًا للمتابعة.';
   var recordShieldMessage = '⚫️ تم تعتيم المشغل تلقائيًا لحماية المحتوى عند محاولة تصوير أو تسجيل الشاشة. افتح المشغل المحمي يدويًا للمتابعة.';
   var mobileExitShieldMessage = '🔒 تم إعادة حجب الفيديو بعد الخروج من العرض الآمن على هذا الجهاز. اضغط على فتح المشغل المحمي للمتابعة.';
-  var mobileSecureStateShieldMessage = '🔒 على الموبايل لن يتم فتح الفيديو إلا داخل وضع العرض الآمن بملء الشاشة. فعّل ملء الشاشة أولًا ثم افتح المشغل المحمي.';
+  var mobileSecureStateShieldMessage = '🔒 على الموبايل لن يتم فتح الفيديو إلا داخل وضع العرض الآمن بملء الشاشة، وبدون شريط إشعارات أو أي طبقة نظام فوقه. أعد المشغل إلى العرض الآمن ثم افتح المشغل المحمي.';
   var mobileFullscreenRejectionShieldMessage = '🔒 لم يتم تفعيل ملء الشاشة الآمن على هذا الجهاز، لذلك بقي الفيديو محجوبًا. اسمح بملء الشاشة أو استخدم متصفحًا يدعمها.';
 
   function ensureValidHalfSeconds(nextValue) {
@@ -511,8 +513,28 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
     return false;
   }
 
+  function hasMobileViewportOverlay() {
+    if (!isLikelyMobilePlayback() || !window.visualViewport) return false;
+    var viewport = window.visualViewport;
+    var layoutWidth = window.innerWidth || 0;
+    var layoutHeight = window.innerHeight || 0;
+    var widthGap = Math.abs(layoutWidth - (viewport.width || 0));
+    var heightGap = Math.abs(layoutHeight - (viewport.height || 0));
+    var offsetTop = Math.abs(viewport.offsetTop || 0);
+    var offsetLeft = Math.abs(viewport.offsetLeft || 0);
+
+    return widthGap > mobileViewportOverlayThresholdPx ||
+      heightGap > mobileViewportOverlayThresholdPx ||
+      offsetTop > mobileViewportOffsetThresholdPx ||
+      offsetLeft > mobileViewportOffsetThresholdPx;
+  }
+
   function hasMobileSecurePlaybackState() {
-    return isStageFullscreenActive();
+    if (!isStageFullscreenActive()) return false;
+    if (document.visibilityState === 'hidden') return false;
+    if (!hasDocumentFocus()) return false;
+    if (hasMobileViewportOverlay()) return false;
+    return true;
   }
 
   function needsMobileLandscapeViewportFallback() {
@@ -1315,20 +1337,31 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
         : '🔒 يجب إبقاء الصفحة في الواجهة قبل متابعة الفيديو.');
     }
   });
+  function handleMobileSecureStateViewportChange() {
+    if (protectedPageClosed || videoState.isBlocked || !playbackBootstrapped || !isLikelyMobilePlayback()) return;
+    window.clearTimeout(mobileSecureStateResizeHandle);
+    mobileSecureStateResizeHandle = window.setTimeout(function(){
+      mobileSecureStateResizeHandle = 0;
+      syncMobileLandscapePresentation();
+      if (isStageFullscreenActive()) scheduleMobileLandscapeLock(mobileLandscapeLockRetryCount);
+      if (!hasSecurePlaybackFocus()) {
+        var mobileViewportOverlayDetected = hasMobileViewportOverlay();
+        var mobileViewportNotice = mobileViewportOverlayDetected
+          ? '🔒 تم اكتشاف شريط إشعارات أو طبقة نظام فوق الفيديو، لذلك تمت إعادة حجب الفيديو حتى يعود العرض الآمن الكامل.'
+          : '🔒 تغيّرت حالة العرض على الموبايل، لذلك تمت إعادة حجب الفيديو حتى يعود ملء الشاشة الآمن.';
+        enforceSecurePlaybackState(mobileViewportOverlayDetected ? mobileSecureStateShieldMessage : mobileExitShieldMessage, mobileViewportNotice);
+      }
+    }, mobileSecureStateResizeDebounceMs);
+  }
+
   ['resize', 'orientationchange'].forEach(function(evt){
-    window.addEventListener(evt, function(){
-      if (protectedPageClosed || videoState.isBlocked || !playbackBootstrapped || !isLikelyMobilePlayback()) return;
-      window.clearTimeout(mobileSecureStateResizeHandle);
-      mobileSecureStateResizeHandle = window.setTimeout(function(){
-        mobileSecureStateResizeHandle = 0;
-        syncMobileLandscapePresentation();
-        if (isStageFullscreenActive()) scheduleMobileLandscapeLock(mobileLandscapeLockRetryCount);
-        if (!hasSecurePlaybackFocus()) {
-          enforceSecurePlaybackState(mobileExitShieldMessage, '🔒 تغيّرت حالة العرض على الموبايل، لذلك تمت إعادة حجب الفيديو حتى يعود ملء الشاشة الآمن.');
-        }
-      }, mobileSecureStateResizeDebounceMs);
-    });
+    window.addEventListener(evt, handleMobileSecureStateViewportChange);
   });
+  if (window.visualViewport && typeof window.visualViewport.addEventListener === 'function') {
+    ['resize', 'scroll'].forEach(function(evt){
+      window.visualViewport.addEventListener(evt, handleMobileSecureStateViewportChange);
+    });
+  }
 
   window.addEventListener('beforeunload', function(){
     if (!activeWatchToken || countedToken === activeWatchToken) return;
