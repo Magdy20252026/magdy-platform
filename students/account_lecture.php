@@ -167,6 +167,8 @@ try {
       duration_minutes,
       allowed_views_per_student,
       video_type,
+      exam_id,
+      assignment_id,
       embed_iframe,
       embed_iframe_enc,
       embed_iframe_iv
@@ -198,10 +200,13 @@ if ($isLectureOpen && !empty($videos)) {
   foreach ($videos as &$videoRow) {
     $videoId = (int)($videoRow['id'] ?? 0);
     $stats = student_get_video_watch_stats($pdo, $studentId, $videoId, $videoRow);
+    $videoRequirement = student_get_video_requirement_status($pdo, $studentId, $videoRow);
     $videoRow['views_allowed'] = (int)$stats['allowed'];
     $videoRow['views_used'] = (int)$stats['used'];
     $videoRow['views_remaining'] = (int)$stats['remaining'];
     $videoRow['is_blocked'] = (bool)$stats['blocked'];
+    $videoRow['video_requirement'] = $videoRequirement;
+    $videoRow['is_requirement_locked'] = !empty($videoRequirement['required']) && empty($videoRequirement['satisfied']);
     $videoRow['half_watch_seconds'] = student_video_half_watch_seconds((int)($videoRow['duration_minutes'] ?? 0));
   }
   unset($videoRow);
@@ -355,10 +360,12 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
               $videoRemaining = (int)($v['views_remaining'] ?? 0);
               $videoAllowed = (int)($v['views_allowed'] ?? (int)($v['allowed_views_per_student'] ?? 1));
               $isBlockedVideo = (bool)($v['is_blocked'] ?? false);
+              $videoRequirement = (array)($v['video_requirement'] ?? []);
+              $isRequirementLocked = (bool)($v['is_requirement_locked'] ?? false);
               $videoId = (int)($v['id'] ?? 0);
             ?>
             <div
-              class="acc-item acc-item--media<?php echo ($isBlockedVideo ? ' is-blocked' : ''); ?>"
+              class="acc-item acc-item--media<?php echo ($isBlockedVideo || $isRequirementLocked ? ' is-blocked' : ''); ?>"
             >
               <div class="acc-item__body">
                 <div class="acc-item__title">🎥 <?php echo h((string)$v['title']); ?></div>
@@ -368,7 +375,11 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
                     👁️ المشاهدات المستخدمة: <b><?php echo (int)($v['views_used'] ?? 0); ?></b> / <?php echo $videoAllowed; ?>
                     • المتبقي: <b><?php echo $videoRemaining; ?></b>
                   </div>
-                  <?php if ($isBlockedVideo): ?>
+                  <?php if ($isRequirementLocked): ?>
+                    <div class="acc-item__badge acc-item__badge--danger">
+                      🔒 يجب حل وتسليم <?php echo h((string)($videoRequirement['assessment_name'] ?? $videoRequirement['assessment_label'] ?? 'المحتوى المرتبط')); ?> أولًا
+                    </div>
+                  <?php elseif ($isBlockedVideo): ?>
                     <div class="acc-item__badge acc-item__badge--danger">انتهت عدد المشاهدات</div>
                   <?php else: ?>
                     <div class="acc-item__badge">تشغيل داخل المنصة</div>
@@ -377,7 +388,12 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
               </div>
 
               <div class="acc-item__side">
-                <?php if ($isLectureOpen && !$isBlockedVideo): ?>
+                <?php if ($isLectureOpen && $isRequirementLocked): ?>
+                  <a
+                    class="acc-modal-btn acc-modal-btn--ghost"
+                    href="<?php echo h((string)($videoRequirement['assessment_href'] ?? '#')); ?>"
+                  >حل <?php echo h((string)($videoRequirement['assessment_label'] ?? 'المحتوى')); ?></a>
+                <?php elseif ($isLectureOpen && !$isBlockedVideo): ?>
                   <a
                     class="acc-modal-btn acc-modal-btn--primary"
                     href="lecture_video_player.php?video_id=<?php echo $videoId; ?>"
@@ -387,7 +403,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
                 <?php endif; ?>
 
                 <?php if ($isLectureOpen): ?>
-                  <div class="acc-item__lock"><?php echo $isBlockedVideo ? '⛔' : '✅'; ?></div>
+                  <div class="acc-item__lock"><?php echo $isRequirementLocked ? '🔒' : ($isBlockedVideo ? '⛔' : '✅'); ?></div>
                 <?php else: ?>
                   <div class="acc-item__lock">🔒</div>
                 <?php endif; ?>

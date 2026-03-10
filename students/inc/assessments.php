@@ -217,6 +217,58 @@ function student_assessment_fetch_latest_attempt(PDO $pdo, string $type, int $as
   }
 }
 
+function student_assessment_attempt_answer_summary(PDO $pdo, string $type, int $attemptId): array {
+  $cfg = student_assessment_type_config($type);
+  if (!$cfg || $attemptId <= 0) {
+    return [
+      'question_count' => 0,
+      'answered_count' => 0,
+    ];
+  }
+
+  student_assessment_ensure_attempt_tables($pdo);
+
+  try {
+    $stmt = $pdo->prepare("
+      SELECT COUNT(*) FROM {$cfg['attempt_questions_table']}
+      WHERE attempt_id = ?
+    ");
+    $stmt->execute([$attemptId]);
+    $questionCount = max(0, (int)($stmt->fetchColumn() ?: 0));
+
+    $stmt = $pdo->prepare("
+      SELECT COUNT(DISTINCT question_id) FROM {$cfg['attempt_answers_table']}
+      WHERE attempt_id = ?
+    ");
+    $stmt->execute([$attemptId]);
+    $answeredCount = max(0, (int)($stmt->fetchColumn() ?: 0));
+
+    return [
+      'question_count' => $questionCount,
+      'answered_count' => $answeredCount,
+    ];
+  } catch (Throwable $e) {
+    return [
+      'question_count' => 0,
+      'answered_count' => 0,
+    ];
+  }
+}
+
+function student_assessment_attempt_is_completed(PDO $pdo, string $type, ?array $attempt): bool {
+  if (!$attempt || (string)($attempt['status'] ?? '') !== 'submitted') {
+    return false;
+  }
+
+  $attemptId = (int)($attempt['id'] ?? 0);
+  if ($attemptId <= 0) {
+    return false;
+  }
+
+  $summary = student_assessment_attempt_answer_summary($pdo, $type, $attemptId);
+  return $summary['question_count'] > 0 && $summary['answered_count'] >= $summary['question_count'];
+}
+
 function student_assessment_resolve_duration_minutes(int $attemptDurationMinutes, int $assessmentDurationMinutes): int {
   if ($attemptDurationMinutes > 0) return $attemptDurationMinutes;
   if ($assessmentDurationMinutes > 0) return $assessmentDurationMinutes;

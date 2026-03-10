@@ -174,7 +174,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
         <div class="acc-playerSurface" id="lecturePlayerSurface">
           <div class="acc-playerPlaceholder" id="lecturePlayerPlaceholder">
             <?php if ($videoLockedByRequirement): ?>
-              🔒 هذا الفيديو مرتبط بـ <?php echo h((string)($videoRequirement['assessment_label'] ?? 'المحتوى')); ?>، ولن يعمل إلا بعد تسليمه.
+              🔒 هذا الفيديو مرتبط بـ <?php echo h((string)($videoRequirement['assessment_label'] ?? 'المحتوى')); ?>، ولن يعمل إلا بعد حله وتسليمه.
             <?php elseif (!empty($stats['blocked'])): ?>
               ⛔ انتهت عدد المشاهدات المسموحة لهذا الفيديو، ولن يتم تشغيله مرة أخرى.
             <?php else: ?>
@@ -227,7 +227,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
 
       <div class="acc-playerNotice" id="lecturePlayerNotice">
         <?php if ($videoLockedByRequirement): ?>
-          🔒 يجب تسليم <?php echo h((string)($videoRequirement['assessment_name'] ?? 'المحتوى المرتبط')); ?> أولًا قبل تشغيل الفيديو. <a href="<?php echo h((string)($videoRequirement['assessment_href'] ?? '#')); ?>">فتح <?php echo h((string)($videoRequirement['assessment_label'] ?? 'المحتوى')); ?></a>
+          🔒 يجب حل وتسليم <?php echo h((string)($videoRequirement['assessment_name'] ?? 'المحتوى المرتبط')); ?> أولًا قبل تشغيل الفيديو. <a href="<?php echo h((string)($videoRequirement['assessment_href'] ?? '#')); ?>">فتح <?php echo h((string)($videoRequirement['assessment_label'] ?? 'المحتوى')); ?></a>
         <?php elseif (!empty($stats['blocked'])): ?>
           ⛔ لا يمكن تشغيل هذا الفيديو لأن عدد المشاهدات المسموحة انتهى.
         <?php else: ?>
@@ -254,7 +254,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
     isAssessmentLocked: <?php echo $videoLockedByRequirement ? 'true' : 'false'; ?>,
     assessmentLockMessage: <?php echo json_encode(
       $videoLockedByRequirement
-        ? ('يجب تسليم ' . (string)($videoRequirement['assessment_name'] ?? 'المحتوى المرتبط') . ' أولًا قبل تشغيل الفيديو.')
+        ? ('يجب حل وتسليم ' . (string)($videoRequirement['assessment_name'] ?? 'المحتوى المرتبط') . ' أولًا قبل تشغيل الفيديو.')
         : '',
       JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
     ); ?>,
@@ -1056,7 +1056,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
 
   function startPlayback() {
     if (videoState.isBlocked) {
-      updateNotice(videoState.isAssessmentLocked ? ('🔒 ' + (videoState.assessmentLockMessage || 'الفيديو مرتبط بمحتوى يجب تسليمه أولًا.')) : '⛔ انتهت عدد المشاهدات المسموحة لهذا الفيديو.', true);
+      updateNotice(videoState.isAssessmentLocked ? ('🔒 ' + (videoState.assessmentLockMessage || 'الفيديو مرتبط بمحتوى يجب حله وتسليمه أولًا.')) : '⛔ انتهت عدد المشاهدات المسموحة لهذا الفيديو.', true);
       return;
     }
     if (startRequestInFlight || playbackBootstrapped) {
