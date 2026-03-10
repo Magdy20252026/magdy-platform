@@ -221,7 +221,7 @@ $pageTitle = $config ? ($config['label'] . ' - ' . $platformName) : ('المحت
                 echo h($statusLabel);
               ?>
             </span>
-            <span class="timer-pill" id="assessmentTimer">
+            <span class="timer-pill" id="assessmentTimer" aria-live="polite" dir="ltr">
               <?php if ($isFinished): ?>
                 <?php echo h($finishedTimerLabel); ?>
               <?php else: ?>
@@ -430,10 +430,11 @@ $pageTitle = $config ? ($config['label'] . ' - ' . $platformName) : ('المحت
       showQuestion(0);
     }
 
-    if (finished || !timerEl || !form || !submitBtn) return;
+    if (finished || !timerEl) return;
 
-    const remainingSeconds = <?php echo (int)$remainingSeconds; ?>;
-    let left = Math.max(0, remainingSeconds);
+    const initialRemainingSeconds = Math.max(0, <?php echo (int)$remainingSeconds; ?>);
+    const deadlineAt = Date.now() + (initialRemainingSeconds * 1000);
+    let timeoutTriggered = false;
 
     function formatTime(totalSeconds) {
       const safeSeconds = Math.max(0, totalSeconds);
@@ -442,21 +443,28 @@ $pageTitle = $config ? ($config['label'] . ' - ' . $platformName) : ('المحت
       return minutes + ':' + seconds;
     }
 
-    function renderTimer() {
+    function getRemainingSeconds() {
+      return Math.max(0, Math.ceil((deadlineAt - Date.now()) / 1000));
+    }
+
+    function renderTimer(left) {
       timerEl.textContent = '⏱️ المتبقي: ' + formatTime(left);
     }
 
     function tick() {
-      renderTimer();
+      const left = getRemainingSeconds();
+      renderTimer(left);
+
       if (left <= 0) {
         clearInterval(timer);
-        submitBtn.click();
-        return;
+        if (!timeoutTriggered && form && submitBtn) {
+          timeoutTriggered = true;
+          submitBtn.click();
+        }
       }
-      left -= 1;
     }
 
-    renderTimer();
+    renderTimer(initialRemainingSeconds);
     const timer = setInterval(tick, 1000);
   })();
   </script>
