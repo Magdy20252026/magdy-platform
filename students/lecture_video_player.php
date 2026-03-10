@@ -183,10 +183,10 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
         </div>
         <div class="acc-platformControls" id="lecturePlayerControls" hidden>
           <div class="acc-platformControls__group acc-platformControls__group--actions">
-            <button class="acc-modal-btn acc-modal-btn--primary acc-platformControls__iconBtn" type="button" id="lecturePlayerCtrlPlayPause" aria-label="تشغيل أو إيقاف الفيديو" disabled>▶️ تشغيل</button>
-            <button class="acc-modal-btn acc-modal-btn--ghost acc-platformControls__iconBtn" type="button" id="lecturePlayerCtrlSeekBack" aria-label="إرجاع عشر ثواني" disabled>⏪ 10 ث</button>
-            <button class="acc-modal-btn acc-modal-btn--ghost acc-platformControls__iconBtn" type="button" id="lecturePlayerCtrlSeekForward" aria-label="تقديم عشر ثواني" disabled>10 ث ⏩</button>
-            <button class="acc-modal-btn acc-modal-btn--ghost acc-platformControls__iconBtn" type="button" id="lecturePlayerCtrlFullscreen" aria-label="تكبير المشغل" disabled>⛶ تكبير</button>
+            <button class="acc-modal-btn acc-modal-btn--primary acc-platformControls__iconBtn" type="button" id="lecturePlayerCtrlPlayPause" aria-label="تشغيل أو إيقاف الفيديو" disabled>تشغيل ▶️</button>
+            <button class="acc-modal-btn acc-modal-btn--ghost acc-platformControls__iconBtn" type="button" id="lecturePlayerCtrlSeekBack" aria-label="إرجاع عشر ثواني" disabled>رجوع 10 ث ⏪</button>
+            <button class="acc-modal-btn acc-modal-btn--ghost acc-platformControls__iconBtn" type="button" id="lecturePlayerCtrlSeekForward" aria-label="تقديم عشر ثواني" disabled>تقديم 10 ث ⏩</button>
+            <button class="acc-modal-btn acc-modal-btn--ghost acc-platformControls__iconBtn" type="button" id="lecturePlayerCtrlFullscreen" aria-label="تكبير المشغل" disabled>تكبير ⛶</button>
           </div>
           <div class="acc-platformControls__group acc-platformControls__group--timeline">
             <span class="acc-platformControls__label">الوقت</span>
@@ -282,6 +282,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   const devtoolsStrikeThreshold = 2;
   const devtoolsCheckIntervalMs = 400;
   const fallbackHalfSeconds = 30;
+  const seekDeltaSeconds = 10;
   const youtubeStatePlaying = 1;
 
   function ensureValidHalfSeconds(nextValue) {
@@ -360,7 +361,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
 
   function setPlayPauseLabel(isPlaying) {
     if (!ctrlPlayPauseBtn) return;
-    ctrlPlayPauseBtn.textContent = isPlaying ? '⏸️ إيقاف' : '▶️ تشغيل';
+    ctrlPlayPauseBtn.textContent = isPlaying ? 'إيقاف ⏸️' : 'تشغيل ▶️';
   }
 
   function setPlatformControlsVisible(visible) {
@@ -724,7 +725,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
     if (ctrlFullscreenBtn) ctrlFullscreenBtn.addEventListener('click', toggleFullscreen);
 
     document.addEventListener('fullscreenchange', function(){
-      fullscreenBtn.textContent = document.fullscreenElement ? '🡼 إغلاق التكبير' : '⛶ تكبير المشغل';
+      fullscreenBtn.textContent = document.fullscreenElement ? 'إغلاق التكبير 🡼' : 'تكبير ⛶';
     });
   }
 
@@ -758,13 +759,13 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
 
   if (ctrlSeekBackBtn) {
     ctrlSeekBackBtn.addEventListener('click', function(){
-      seekYoutubeBy(-10);
+      seekYoutubeBy(-seekDeltaSeconds);
     });
   }
 
   if (ctrlSeekForwardBtn) {
     ctrlSeekForwardBtn.addEventListener('click', function(){
-      seekYoutubeBy(10);
+      seekYoutubeBy(seekDeltaSeconds);
     });
   }
 
@@ -854,12 +855,12 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
     }
     if (key === 'arrowleft' || key === 'j') {
       e.preventDefault();
-      seekYoutubeBy(-10);
+      seekYoutubeBy(-seekDeltaSeconds);
       return;
     }
     if (key === 'arrowright' || key === 'l') {
       e.preventDefault();
-      seekYoutubeBy(10);
+      seekYoutubeBy(seekDeltaSeconds);
     }
   });
 
