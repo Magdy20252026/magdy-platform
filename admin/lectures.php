@@ -52,6 +52,26 @@ function normalize_money($v): float {
   return $v;
 }
 
+function find_student_by_code(PDO $pdo, string $code): ?array {
+  $code = trim($code);
+  if ($code === '') return null;
+
+  $stmt = $pdo->prepare("
+    SELECT id, full_name, barcode, grade_id, student_phone
+    FROM students
+    WHERE barcode = ?
+       OR CONCAT('STD-', id) = ?
+    LIMIT 1
+  ");
+  $stmt->execute([$code, $code]);
+  $row = $stmt->fetch(PDO::FETCH_ASSOC);
+  return $row ?: null;
+}
+
+function lecture_enrollment_access_type_for_admin(string $courseAccessType): string {
+  return $courseAccessType === 'free' ? 'free' : 'attendance';
+}
+
 /* =========================
    Data lists - Courses
    ========================= */
@@ -195,22 +215,119 @@ if (($_POST['action'] ?? '') === 'delete') {
   }
 }
 
+if (($_POST['action'] ?? '') === 'add_student') {
+  $lectureIdForStudent = (int)($_POST['lecture_id'] ?? 0);
+  $studentCode = trim((string)($_POST['student_code'] ?? ''));
+
+  if ($lectureIdForStudent <= 0) {
+    $error = 'المحاضرة المطلوبة غير صالحة.';
+  } elseif ($studentCode === '') {
+    $error = 'من فضلك اكتب كود الطالب.';
+  } else {
+    $stmt = $pdo->prepare("
+      SELECT l.id, l.course_id, c.grade_id, c.access_type AS course_access_type
+      FROM lectures l
+      INNER JOIN courses c ON c.id = l.course_id
+      WHERE l.id=?
+      LIMIT 1
+    ");
+    $stmt->execute([$lectureIdForStudent]);
+    $lectureRow = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+    $studentRow = find_student_by_code($pdo, $studentCode);
+
+    if (!$lectureRow) {
+      $error = 'المحاضرة غير موجودة.';
+    } elseif (!$studentRow) {
+      $error = 'لم يتم العثور على طالب بهذا الكود.';
+    } elseif ((int)($studentRow['grade_id'] ?? 0) !== (int)($lectureRow['grade_id'] ?? 0)) {
+      $error = 'هذا الطالب لا يتبع نفس الصف الدراسي الخاص بالمحاضرة.';
+    } else {
+      try {
+        $stmt = $pdo->prepare("
+          INSERT IGNORE INTO student_lecture_enrollments
+            (student_id, lecture_id, course_id, access_type, paid_amount, lecture_code_id)
+          VALUES (?, ?, ?, ?, NULL, NULL)
+        ");
+        $stmt->execute([
+          (int)$studentRow['id'],
+          $lectureIdForStudent,
+          (int)$lectureRow['course_id'],
+          lecture_enrollment_access_type_for_admin((string)($lectureRow['course_access_type'] ?? 'attendance')),
+        ]);
+
+        header('Location: lectures.php?student_added=1&lecture_students=' . $lectureIdForStudent);
+        exit;
+      } catch (Throwable $e) {
+        $error = 'تعذر إضافة الطالب إلى المحاضرة.';
+      }
+    }
+  }
+}
+
 /* Messages */
 if (isset($_GET['added'])) $success = 'تمت إضافة المحاضرة بنجاح.';
 if (isset($_GET['updated'])) $success = 'تم تعديل المحاضرة بنجاح.';
 if (isset($_GET['deleted'])) $success = 'تم حذف المحاضرة بنجاح.';
+if (isset($_GET['student_added'])) $success = 'تم اشتراك الطالب في المحاضرة بنجاح.';
 
 /* Fetch list */
 $lectures = $pdo->query("
   SELECT
     l.*,
     c.name AS course_name,
+    c.grade_id AS course_grade_id,
     c.access_type AS course_access_type
   FROM lectures l
   INNER JOIN courses c ON c.id = l.course_id
   ORDER BY l.id DESC
 ")->fetchAll();
 $totalLectures = count($lectures);
+
+$lectureStudentsId = (int)($_GET['lecture_students'] ?? 0);
+$lectureStudentsRow = null;
+$lectureStudents = [];
+if ($lectureStudentsId > 0) {
+  foreach ($lectures as $lectureItem) {
+    if ((int)$lectureItem['id'] === $lectureStudentsId) {
+      $lectureStudentsRow = $lectureItem;
+      break;
+    }
+  }
+
+  if ($lectureStudentsRow) {
+    $stmt = $pdo->prepare("
+      SELECT *
+      FROM (
+        SELECT
+          s.id,
+          s.full_name,
+          s.student_phone,
+          s.barcode,
+          sle.access_type,
+          sle.created_at
+        FROM student_lecture_enrollments sle
+        INNER JOIN students s ON s.id = sle.student_id
+        WHERE sle.lecture_id = ?
+
+        UNION
+
+        SELECT
+          s.id,
+          s.full_name,
+          s.student_phone,
+          s.barcode,
+          CONCAT('course:', sce.access_type) AS access_type,
+          sce.created_at
+        FROM student_course_enrollments sce
+        INNER JOIN students s ON s.id = sce.student_id
+        WHERE sce.course_id = ?
+      ) lecture_students
+      ORDER BY created_at DESC, full_name ASC
+    ");
+    $stmt->execute([$lectureStudentsId, (int)$lectureStudentsRow['course_id']]);
+    $lectureStudents = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+  }
+}
 
 /* Edit mode */
 $editId = (int)($_GET['edit'] ?? 0);
@@ -453,6 +570,75 @@ if ($adminRole !== 'مدير') {
         </form>
       </section>
 
+      <?php if ($lectureStudentsRow): ?>
+        <section class="cardx" style="margin-top:12px;">
+          <div class="cardx-head">
+            <div class="cardx-title">
+              <span class="cardx-badge">🧑‍🎓</span>
+              <h2>طلاب المحاضرة: <?php echo h((string)$lectureStudentsRow['name']); ?></h2>
+            </div>
+            <div class="cardx-actions">
+              <a class="btn ghost" href="lectures.php">إغلاق</a>
+            </div>
+          </div>
+
+          <div class="lecture-manage-grid">
+            <div class="lecture-manage-card">
+              <div class="lecture-manage-title">📘 بيانات المحاضرة</div>
+              <div class="lecture-manage-list">
+                <div><b>الكورس:</b> <?php echo h((string)$lectureStudentsRow['course_name']); ?></div>
+                <div><b>نوع الوصول:</b> <?php echo h((string)$lectureStudentsRow['course_access_type']); ?></div>
+              </div>
+            </div>
+
+            <div class="lecture-manage-card">
+              <div class="lecture-manage-title">➕ إضافة طالب للمحاضرة</div>
+              <form method="post" class="lecture-manage-form">
+                <input type="hidden" name="action" value="add_student">
+                <input type="hidden" name="lecture_id" value="<?php echo (int)$lectureStudentsRow['id']; ?>">
+                <label class="field" style="margin:0;">
+                  <span class="label">كود الطالب</span>
+                  <input class="input2" name="student_code" placeholder="اكتب كود الطالب أو STD-ID" required>
+                </label>
+                <div class="form-actions">
+                  <button class="btn" type="submit">➕ إضافة الطالب</button>
+                </div>
+              </form>
+            </div>
+          </div>
+
+          <div class="table-wrap" style="padding:0 14px 14px;">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>اسم الطالب</th>
+                  <th>كود الطالب</th>
+                  <th>رقم الطالب</th>
+                  <th>نوع الاشتراك</th>
+                  <th>تاريخ الاشتراك</th>
+                </tr>
+              </thead>
+              <tbody>
+                <?php if (!$lectureStudents): ?>
+                  <tr><td colspan="6" style="text-align:center">لا يوجد طلاب مشتركين في هذه المحاضرة بعد.</td></tr>
+                <?php endif; ?>
+                <?php foreach ($lectureStudents as $idx => $studentRow): ?>
+                  <tr>
+                    <td><?php echo (int)($idx + 1); ?></td>
+                    <td><?php echo h((string)$studentRow['full_name']); ?></td>
+                    <td><?php echo h((string)($studentRow['barcode'] ?: ('STD-' . (int)$studentRow['id']))); ?></td>
+                    <td><?php echo h((string)$studentRow['student_phone']); ?></td>
+                    <td><?php echo h((string)$studentRow['access_type']); ?></td>
+                    <td><?php echo h((string)$studentRow['created_at']); ?></td>
+                  </tr>
+                <?php endforeach; ?>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      <?php endif; ?>
+
       <section class="cardx" style="margin-top:12px;">
         <div class="cardx-head">
           <div class="cardx-title">
@@ -517,8 +703,8 @@ if ($adminRole !== 'مدير') {
                     <button class="link danger" type="submit">🗑️ حذف</button>
                   </form>
 
-                  <span class="link warn" title="قريبًا">🧑‍🎓 الطلاب</span>
-                  <span class="link warn" title="قريبًا">➕ إضافة طالب</span>
+                  <a class="link warn" href="lectures.php?lecture_students=<?php echo (int)$l['id']; ?>">🧑‍🎓 الطلاب</a>
+                  <a class="link warn" href="lectures.php?lecture_students=<?php echo (int)$l['id']; ?>">➕ إضافة طالب</a>
                 </div>
               </div>
             </article>

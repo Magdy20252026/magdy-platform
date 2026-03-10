@@ -164,6 +164,20 @@
   gap:12px;
 }
 
+.students-manage-card{
+  margin: 14px;
+  border:2px solid var(--line);
+  border-radius: 18px;
+  background: var(--panel2);
+  overflow: hidden;
+}
+.students-manage-meta{
+  padding: 0 14px 14px;
+  display:flex;
+  gap:8px;
+  flex-wrap:wrap;
+}
+
 /* =========================
    ✅ Desktop: ضبط حجم صفحة الطلاب + تمرير للجدول (عرضي/طولي)
    + ✅ إطارات تمرير احترافية (Desktop فقط)

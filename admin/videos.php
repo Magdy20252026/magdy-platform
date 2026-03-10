@@ -219,12 +219,88 @@ function valid_video_type(string $t): bool {
   return in_array($t, ['youtube','bunny','inkrypt','vimeo','vdocipher'], true);
 }
 
+function find_student_by_code(PDO $pdo, string $code): ?array {
+  $code = trim($code);
+  if ($code === '') return null;
+
+  $stmt = $pdo->prepare("
+    SELECT id, full_name, barcode, grade_id
+    FROM students
+    WHERE barcode = ?
+       OR CONCAT('STD-', id) = ?
+    LIMIT 1
+  ");
+  $stmt->execute([$code, $code]);
+  $row = $stmt->fetch(PDO::FETCH_ASSOC);
+  return $row ?: null;
+}
+
+function video_bonus_views_ensure_table(PDO $pdo): void {
+  static $ready = false;
+  if ($ready) return;
+  $ready = true;
+
+  try {
+    $pdo->exec("
+      CREATE TABLE IF NOT EXISTS video_student_bonus_views (
+        id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+        video_id INT UNSIGNED NOT NULL,
+        student_id INT UNSIGNED NOT NULL,
+        bonus_views INT UNSIGNED NOT NULL DEFAULT 0,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (id),
+        UNIQUE KEY uniq_video_student_bonus (video_id, student_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+    ");
+  } catch (Throwable $e) {
+    // ignore
+  }
+}
+
+function grant_video_bonus_view(PDO $pdo, int $videoId, int $studentId): bool {
+  if ($videoId <= 0 || $studentId <= 0) return false;
+
+  video_bonus_views_ensure_table($pdo);
+
+  try {
+    $stmt = $pdo->prepare("
+      INSERT INTO video_student_bonus_views (video_id, student_id, bonus_views)
+      VALUES (?, ?, 1)
+      ON DUPLICATE KEY UPDATE bonus_views = bonus_views + 1
+    ");
+    $stmt->execute([$videoId, $studentId]);
+    return true;
+  } catch (Throwable $e) {
+    return false;
+  }
+}
+
 /* =========================
    Lists
    ========================= */
-$coursesList = $pdo->query("SELECT id, name FROM courses ORDER BY id DESC")->fetchAll();
+$coursesList = $pdo->query("SELECT id, name, grade_id FROM courses ORDER BY id DESC")->fetchAll();
 $coursesMap = [];
-foreach ($coursesList as $c) $coursesMap[(int)$c['id']] = (string)$c['name'];
+foreach ($coursesList as $c) {
+  $coursesMap[(int)$c['id']] = [
+    'name' => (string)$c['name'],
+    'grade_id' => (int)($c['grade_id'] ?? 0),
+  ];
+}
+
+$examsList = $pdo->query("
+  SELECT e.id, e.name, e.grade_id, g.name AS grade_name
+  FROM exams e
+  INNER JOIN grades g ON g.id = e.grade_id
+  ORDER BY e.id DESC
+")->fetchAll();
+
+$assignmentsList = $pdo->query("
+  SELECT a.id, a.name, a.grade_id, g.name AS grade_name
+  FROM assignments a
+  INNER JOIN grades g ON g.id = a.grade_id
+  ORDER BY a.id DESC
+")->fetchAll();
 
 /* =========================
    CRUD - Videos
@@ -243,21 +319,31 @@ if (($_POST['action'] ?? '') === 'create') {
 
   $videoType = (string)($_POST['video_type'] ?? 'youtube');
   $iframe = trim((string)($_POST['embed_iframe'] ?? ''));
-
-  // exams/assignments لاحقًا
-  $examId = null;
-  $assignmentId = null;
+  $examId = (int)($_POST['exam_id'] ?? 0);
+  $assignmentId = (int)($_POST['assignment_id'] ?? 0);
+  if ($examId <= 0) $examId = null;
+  if ($assignmentId <= 0) $assignmentId = null;
 
   if ($title === '') $error = 'من فضلك اكتب اسم/عنوان الفيديو.';
   elseif ($courseId <= 0 || !isset($coursesMap[$courseId])) $error = 'من فضلك اختر الكورس.';
   elseif ($lectureId <= 0) $error = 'من فضلك اختر المحاضرة.';
   elseif (!valid_video_type($videoType)) $error = 'نوع الفيديو غير صحيح.';
   elseif ($iframe === '') $error = 'من فضلك ضع كود الـ iframe.';
+  elseif ($examId !== null && $assignmentId !== null) $error = 'اختر ربطًا واحدًا فقط: امتحان أو واجب.';
   else {
     // تأكد أن المحاضرة تابعة للكورس
     $stmt = $pdo->prepare("SELECT id FROM lectures WHERE id=? AND course_id=? LIMIT 1");
     $stmt->execute([$lectureId, $courseId]);
     if (!$stmt->fetch()) $error = 'المحاضرة المختارة لا تتبع هذا الكورس.';
+    elseif ($examId !== null) {
+      $stmt = $pdo->prepare("SELECT id FROM exams WHERE id=? AND grade_id=? LIMIT 1");
+      $stmt->execute([$examId, (int)$coursesMap[$courseId]['grade_id']]);
+      if (!$stmt->fetch()) $error = 'الامتحان المختار لا يتبع نفس الصف الدراسي للكورس.';
+    } elseif ($assignmentId !== null) {
+      $stmt = $pdo->prepare("SELECT id FROM assignments WHERE id=? AND grade_id=? LIMIT 1");
+      $stmt->execute([$assignmentId, (int)$coursesMap[$courseId]['grade_id']]);
+      if (!$stmt->fetch()) $error = 'الواجب المختار لا يتبع نفس الصف الدراسي للكورس.';
+    }
   }
 
   if (!$error) {
@@ -307,6 +393,10 @@ if (($_POST['action'] ?? '') === 'update') {
 
   $videoType = (string)($_POST['video_type'] ?? 'youtube');
   $iframe = trim((string)($_POST['embed_iframe'] ?? ''));
+  $examId = (int)($_POST['exam_id'] ?? 0);
+  $assignmentId = (int)($_POST['assignment_id'] ?? 0);
+  if ($examId <= 0) $examId = null;
+  if ($assignmentId <= 0) $assignmentId = null;
 
   if ($id <= 0) $error = 'طلب غير صالح.';
   elseif ($title === '') $error = 'اسم الفيديو مطلوب.';
@@ -314,6 +404,7 @@ if (($_POST['action'] ?? '') === 'update') {
   elseif ($lectureId <= 0) $error = 'من فضلك اختر المحاضرة.';
   elseif (!valid_video_type($videoType)) $error = 'نوع الفيديو غير صحيح.';
   elseif ($iframe === '') $error = 'من فضلك ضع كود الـ iframe.';
+  elseif ($examId !== null && $assignmentId !== null) $error = 'اختر ربطًا واحدًا فقط: امتحان أو واجب.';
   else {
     $stmt = $pdo->prepare("SELECT id FROM videos WHERE id=? LIMIT 1");
     $stmt->execute([$id]);
@@ -327,6 +418,14 @@ if (($_POST['action'] ?? '') === 'update') {
       $stmt->execute([$lectureId, $courseId]);
       if (!$stmt->fetch()) {
         $error = 'المحاضرة المختارة لا تتبع هذا الكورس.';
+      } elseif ($examId !== null) {
+        $stmt = $pdo->prepare("SELECT id FROM exams WHERE id=? AND grade_id=? LIMIT 1");
+        $stmt->execute([$examId, (int)$coursesMap[$courseId]['grade_id']]);
+        if (!$stmt->fetch()) $error = 'الامتحان المختار لا يتبع نفس الصف الدراسي للكورس.';
+      } elseif ($assignmentId !== null) {
+        $stmt = $pdo->prepare("SELECT id FROM assignments WHERE id=? AND grade_id=? LIMIT 1");
+        $stmt->execute([$assignmentId, (int)$coursesMap[$courseId]['grade_id']]);
+        if (!$stmt->fetch()) $error = 'الواجب المختار لا يتبع نفس الصف الدراسي للكورس.';
       } else {
         $enc = encrypt_iframe($iframe);
 
@@ -340,7 +439,9 @@ if (($_POST['action'] ?? '') === 'update') {
               video_type=?,
               embed_iframe=?,
               embed_iframe_enc=?,
-              embed_iframe_iv=?
+              embed_iframe_iv=?,
+              exam_id=?,
+              assignment_id=?
           WHERE id=?
         ");
         $stmt->execute([
@@ -353,6 +454,8 @@ if (($_POST['action'] ?? '') === 'update') {
           '',                  // ✅ مهم: embed_iframe NOT NULL
           $enc['enc'],
           $enc['iv'],
+          $examId,
+          $assignmentId,
           $id
         ]);
 
@@ -361,6 +464,41 @@ if (($_POST['action'] ?? '') === 'update') {
       }
     } catch (Throwable $e) {
       $error = 'تعذر تعديل الفيديو.';
+    }
+  }
+}
+
+if (($_POST['action'] ?? '') === 'add_student_view') {
+  $videoIdForView = (int)($_POST['video_id'] ?? 0);
+  $studentCode = trim((string)($_POST['student_code'] ?? ''));
+
+  if ($videoIdForView <= 0) {
+    $error = 'الفيديو المطلوب غير صالح.';
+  } elseif ($studentCode === '') {
+    $error = 'من فضلك اكتب كود الطالب.';
+  } else {
+    $stmt = $pdo->prepare("
+      SELECT v.id, c.grade_id
+      FROM videos v
+      INNER JOIN courses c ON c.id = v.course_id
+      WHERE v.id=?
+      LIMIT 1
+    ");
+    $stmt->execute([$videoIdForView]);
+    $videoForView = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+    $studentRow = find_student_by_code($pdo, $studentCode);
+
+    if (!$videoForView) {
+      $error = 'الفيديو غير موجود.';
+    } elseif (!$studentRow) {
+      $error = 'لم يتم العثور على طالب بهذا الكود.';
+    } elseif ((int)($studentRow['grade_id'] ?? 0) !== (int)($videoForView['grade_id'] ?? 0)) {
+      $error = 'هذا الطالب لا يتبع نفس الصف الدراسي الخاص بالفيديو.';
+    } elseif (!grant_video_bonus_view($pdo, $videoIdForView, (int)$studentRow['id'])) {
+      $error = 'تعذر إضافة مشاهدة إضافية لهذا الطالب.';
+    } else {
+      header('Location: videos.php?extra_view=1&video_students=' . $videoIdForView);
+      exit;
     }
   }
 }
@@ -387,16 +525,22 @@ if (($_POST['action'] ?? '') === 'delete') {
 if (isset($_GET['added'])) $success = 'تمت إضافة الفيديو بنجاح.';
 if (isset($_GET['updated'])) $success = 'تم تعديل الفيديو بنجاح.';
 if (isset($_GET['deleted'])) $success = 'تم حذف الفيديو بنجاح.';
+if (isset($_GET['extra_view'])) $success = 'تمت إضافة مشاهدة إضافية للطالب بنجاح.';
 
 /* Fetch list */
 $videos = $pdo->query("
   SELECT
     v.*,
     c.name AS course_name,
-    l.name AS lecture_name
+    c.grade_id AS course_grade_id,
+    l.name AS lecture_name,
+    e.name AS exam_name,
+    a.name AS assignment_name
   FROM videos v
   INNER JOIN courses c ON c.id = v.course_id
   INNER JOIN lectures l ON l.id = v.lecture_id
+  LEFT JOIN exams e ON e.id = v.exam_id
+  LEFT JOIN assignments a ON a.id = v.assignment_id
   ORDER BY v.id DESC
 ")->fetchAll();
 
@@ -415,6 +559,56 @@ if ($editId > 0) {
 $editIframe = '';
 if ($editRow) {
   $editIframe = decrypt_iframe($editRow['embed_iframe_enc'] ?? null, $editRow['embed_iframe_iv'] ?? null);
+}
+
+$studentsByVideoId = [];
+$videoStudentsId = (int)($_GET['video_students'] ?? 0);
+$videoStudentsRow = null;
+if ($videoStudentsId > 0) {
+  video_bonus_views_ensure_table($pdo);
+  foreach ($videos as $videoItem) {
+    if ((int)$videoItem['id'] === $videoStudentsId) {
+      $videoStudentsRow = $videoItem;
+      break;
+    }
+  }
+
+  if ($videoStudentsRow) {
+    $stmt = $pdo->prepare("
+      SELECT
+        base_students.id,
+        base_students.full_name,
+        base_students.student_phone,
+        base_students.barcode,
+        COALESCE(vsv.views_used, 0) AS views_used,
+        COALESCE(vsb.bonus_views, 0) AS bonus_views
+      FROM (
+        SELECT s.id, s.full_name, s.student_phone, s.barcode
+        FROM student_lecture_enrollments sle
+        INNER JOIN students s ON s.id = sle.student_id
+        WHERE sle.lecture_id = ?
+
+        UNION
+
+        SELECT s.id, s.full_name, s.student_phone, s.barcode
+        FROM student_course_enrollments sce
+        INNER JOIN students s ON s.id = sce.student_id
+        WHERE sce.course_id = ?
+      ) base_students
+      LEFT JOIN video_student_views vsv
+        ON vsv.video_id = ? AND vsv.student_id = base_students.id
+      LEFT JOIN video_student_bonus_views vsb
+        ON vsb.video_id = ? AND vsb.student_id = base_students.id
+      ORDER BY base_students.full_name ASC, base_students.id ASC
+    ");
+    $stmt->execute([
+      (int)$videoStudentsRow['lecture_id'],
+      (int)$videoStudentsRow['course_id'],
+      $videoStudentsId,
+      $videoStudentsId,
+    ]);
+    $studentsByVideoId = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+  }
 }
 
 /* Sidebar menu */
@@ -645,7 +839,7 @@ $videoTypes = [
               <option value="0">— اختر الكورس —</option>
               <?php foreach ($coursesList as $c): ?>
                 <?php $cid = (int)$c['id']; ?>
-                <option value="<?php echo $cid; ?>" <?php echo ($editRow && (int)$editRow['course_id'] === $cid) ? 'selected' : ''; ?>>
+                <option value="<?php echo $cid; ?>" data-grade-id="<?php echo (int)($c['grade_id'] ?? 0); ?>" <?php echo ($editRow && (int)$editRow['course_id'] === $cid) ? 'selected' : ''; ?>>
                   <?php echo h((string)$c['name']); ?>
                 </option>
               <?php endforeach; ?>
@@ -664,16 +858,30 @@ $videoTypes = [
 
           <label class="field">
             <span class="label">ربط بامتحان</span>
-            <select class="input2 select-pro" disabled>
-              <option>قريبًا</option>
+            <select class="input2 select-pro" name="exam_id" id="examSelect">
+              <option value="0">— بدون ربط امتحان —</option>
+              <?php foreach ($examsList as $exam): ?>
+                <?php $examId = (int)$exam['id']; ?>
+                <option value="<?php echo $examId; ?>" data-grade-id="<?php echo (int)($exam['grade_id'] ?? 0); ?>" <?php echo ($editRow && (int)($editRow['exam_id'] ?? 0) === $examId) ? 'selected' : ''; ?>>
+                  <?php echo h((string)$exam['name'] . ' — ' . (string)$exam['grade_name']); ?>
+                </option>
+              <?php endforeach; ?>
             </select>
+            <div class="videos-hint">يمكنك اختيار امتحان واحد فقط، وعند اختياره لن يعمل الفيديو إلا بعد تسليمه.</div>
           </label>
 
           <label class="field">
             <span class="label">ربط بواجب</span>
-            <select class="input2 select-pro" disabled>
-              <option>قريبًا</option>
+            <select class="input2 select-pro" name="assignment_id" id="assignmentSelect">
+              <option value="0">— بدون ربط واجب —</option>
+              <?php foreach ($assignmentsList as $assignment): ?>
+                <?php $assignmentId = (int)$assignment['id']; ?>
+                <option value="<?php echo $assignmentId; ?>" data-grade-id="<?php echo (int)($assignment['grade_id'] ?? 0); ?>" <?php echo ($editRow && (int)($editRow['assignment_id'] ?? 0) === $assignmentId) ? 'selected' : ''; ?>>
+                  <?php echo h((string)$assignment['name'] . ' — ' . (string)$assignment['grade_name']); ?>
+                </option>
+              <?php endforeach; ?>
             </select>
+            <div class="videos-hint">يمكنك اختيار واجب واحد فقط بدلًا من الامتحان.</div>
           </label>
 
           <label class="field">
@@ -701,6 +909,82 @@ $videoTypes = [
           </div>
         </form>
       </section>
+
+      <?php if ($videoStudentsRow): ?>
+        <section class="cardx" style="margin-top:12px;">
+          <div class="cardx-head">
+            <div class="cardx-title">
+              <span class="cardx-badge">🧑‍🎓</span>
+              <h2>طلاب الفيديو: <?php echo h((string)$videoStudentsRow['title']); ?></h2>
+            </div>
+            <div class="cardx-actions">
+              <a class="btn ghost" href="videos.php">إغلاق</a>
+            </div>
+          </div>
+
+          <div class="video-manage-grid">
+            <div class="video-manage-card">
+              <div class="video-manage-title">📚 بيانات الفيديو</div>
+              <div class="video-manage-list">
+                <div><b>الكورس:</b> <?php echo h((string)$videoStudentsRow['course_name']); ?></div>
+                <div><b>المحاضرة:</b> <?php echo h((string)$videoStudentsRow['lecture_name']); ?></div>
+                <div><b>المشاهدات الأساسية:</b> <?php echo (int)$videoStudentsRow['allowed_views_per_student']; ?></div>
+              </div>
+            </div>
+
+            <div class="video-manage-card">
+              <div class="video-manage-title">➕ إضافة مشاهدة للطالب</div>
+              <form method="post" class="video-manage-form">
+                <input type="hidden" name="action" value="add_student_view">
+                <input type="hidden" name="video_id" value="<?php echo (int)$videoStudentsRow['id']; ?>">
+                <label class="field" style="margin:0;">
+                  <span class="label">كود الطالب</span>
+                  <input class="input2" name="student_code" placeholder="اكتب كود الطالب أو STD-ID" required>
+                </label>
+                <div class="form-actions">
+                  <button class="btn" type="submit">➕ إضافة مشاهدة</button>
+                </div>
+              </form>
+            </div>
+          </div>
+
+          <div class="table-wrap" style="padding:0 14px 14px;">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>اسم الطالب</th>
+                  <th>كود الطالب</th>
+                  <th>رقم الطالب</th>
+                  <th>المشاهدات المستخدمة</th>
+                  <th>المشاهدات الإضافية</th>
+                  <th>الإجمالي المتاح</th>
+                </tr>
+              </thead>
+              <tbody>
+                <?php if (!$studentsByVideoId): ?>
+                  <tr><td colspan="7" style="text-align:center">لا يوجد طلاب مشتركين في هذه المحاضرة بعد.</td></tr>
+                <?php endif; ?>
+                <?php foreach ($studentsByVideoId as $idx => $studentRow): ?>
+                  <?php
+                    $bonusViews = (int)($studentRow['bonus_views'] ?? 0);
+                    $baseViews = (int)($videoStudentsRow['allowed_views_per_student'] ?? 1);
+                  ?>
+                  <tr>
+                    <td><?php echo (int)($idx + 1); ?></td>
+                    <td><?php echo h((string)$studentRow['full_name']); ?></td>
+                    <td><?php echo h((string)($studentRow['barcode'] ?: ('STD-' . (int)$studentRow['id']))); ?></td>
+                    <td><?php echo h((string)$studentRow['student_phone']); ?></td>
+                    <td><?php echo (int)($studentRow['views_used'] ?? 0); ?></td>
+                    <td><?php echo $bonusViews; ?></td>
+                    <td><?php echo $baseViews + $bonusViews; ?></td>
+                  </tr>
+                <?php endforeach; ?>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      <?php endif; ?>
 
       <section class="cardx" style="margin-top:12px;">
         <div class="cardx-head">
@@ -735,6 +1019,11 @@ $videoTypes = [
                   <span class="tagx purple">⏱️ <?php echo (int)$v['duration_minutes']; ?> د</span>
                   <span class="tagx green">👀 <?php echo (int)$v['allowed_views_per_student']; ?> مشاهدة/طالب</span>
                   <span class="tagx orange">🔌 <?php echo h($videoTypes[(string)$v['video_type']] ?? (string)$v['video_type']); ?></span>
+                  <?php if (!empty($v['exam_name'])): ?>
+                    <span class="tagx red">🧠 <?php echo h((string)$v['exam_name']); ?></span>
+                  <?php elseif (!empty($v['assignment_name'])): ?>
+                    <span class="tagx red">📝 <?php echo h((string)$v['assignment_name']); ?></span>
+                  <?php endif; ?>
                 </div>
 
                 <div class="video-actions">
@@ -747,8 +1036,8 @@ $videoTypes = [
                     <button class="link danger" type="submit">🗑️ حذف</button>
                   </form>
 
-                  <span class="link warn" title="قريبًا">🧑‍🎓 الطلاب</span>
-                  <span class="link warn" title="قريبًا">➕ إضافة مشاهدة</span>
+                  <a class="link warn" href="videos.php?video_students=<?php echo (int)$v['id']; ?>">🧑‍🎓 الطلاب</a>
+                  <a class="link warn" href="videos.php?video_students=<?php echo (int)$v['id']; ?>">➕ إضافة مشاهدة</a>
                 </div>
               </div>
             </article>
@@ -854,6 +1143,8 @@ $videoTypes = [
       // ===== Dependent lectures dropdown
       const courseSelect = document.getElementById('courseSelect');
       const lectureSelect = document.getElementById('lectureSelect');
+      const examSelect = document.getElementById('examSelect');
+      const assignmentSelect = document.getElementById('assignmentSelect');
 
       const editLectureId = <?php echo $editRow ? (int)$editRow['lecture_id'] : 0; ?>;
 
@@ -882,14 +1173,44 @@ $videoTypes = [
         }
       }
 
+      function syncAssessmentOptions() {
+        if (!courseSelect) return;
+        const selectedCourse = courseSelect.options[courseSelect.selectedIndex];
+        const gradeId = selectedCourse ? String(selectedCourse.getAttribute('data-grade-id') || '0') : '0';
+
+        [examSelect, assignmentSelect].forEach((select) => {
+          if (!select) return;
+          Array.from(select.options).forEach((option, index) => {
+            if (index === 0) {
+              option.hidden = false;
+              return;
+            }
+            const optionGrade = String(option.getAttribute('data-grade-id') || '0');
+            const hidden = (gradeId !== '0' && optionGrade !== gradeId);
+            option.hidden = hidden;
+            if (hidden && option.selected) select.value = '0';
+          });
+        });
+      }
+
+      examSelect && examSelect.addEventListener('change', () => {
+        if (examSelect.value !== '0' && assignmentSelect) assignmentSelect.value = '0';
+      });
+
+      assignmentSelect && assignmentSelect.addEventListener('change', () => {
+        if (assignmentSelect.value !== '0' && examSelect) examSelect.value = '0';
+      });
+
       if (courseSelect) {
         courseSelect.addEventListener('change', () => {
           loadLectures(parseInt(courseSelect.value || '0', 10));
+          syncAssessmentOptions();
         });
 
         // initial
         const initialCourse = parseInt(courseSelect.value || '0', 10);
         loadLectures(initialCourse);
+        syncAssessmentOptions();
       }
 
     })();
