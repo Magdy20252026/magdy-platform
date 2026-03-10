@@ -60,10 +60,6 @@ $logoUrl = $logoDb !== '' ? '../admin/' . ltrim($logoDb, '/') : null;
 
 $studentName = (string)($student['full_name'] ?? ($_SESSION['student_name'] ?? ''));
 $wallet = (float)($student['wallet_balance'] ?? 0);
-$studentCode = trim((string)($student['barcode'] ?? ''));
-if ($studentCode === '') $studentCode = 'STD-' . $studentId;
-$studentWatermark = $studentCode . ' • ' . $studentName;
-
 $cssVer = (string)@filemtime(__DIR__ . '/assets/css/account.css');
 if ($cssVer === '' || $cssVer === '0') $cssVer = (string)time();
 $lecCssVer = (string)@filemtime(__DIR__ . '/assets/css/account-lecture.css');
@@ -128,11 +124,6 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   </div>
 </header>
 
-<div class="acc-screenWatermark" aria-hidden="true">
-  <span class="acc-screenWatermark__chip acc-screenWatermark__chip--one"><?php echo h($studentWatermark); ?></span>
-  <span class="acc-screenWatermark__chip acc-screenWatermark__chip--two"><?php echo h($studentWatermark); ?></span>
-</div>
-
 <main class="acc-viewerPage">
   <div class="container">
     <section class="acc-card acc-viewerHero" aria-label="بيانات ملف PDF">
@@ -153,9 +144,6 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
           src="lecture_pdf.php?pdf_id=<?php echo (int)$pdfId; ?>#toolbar=0&navpanes=0&scrollbar=0"
           loading="lazy"
         ></iframe>
-        <div class="acc-pdfOverlay">
-          <span class="acc-pdfOverlay__chip"><?php echo h($studentWatermark); ?></span>
-        </div>
       </div>
 
       <div class="acc-playerNotice">📑 تم فتح الملف في صفحة مستقلة لسهولة القراءة داخل المنصة.</div>

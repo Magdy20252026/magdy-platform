@@ -192,10 +192,6 @@ try {
 $videosCount = count($videos);
 $pdfsCount = count($pdfs);
 
-$studentCode = trim((string)($student['barcode'] ?? ''));
-if ($studentCode === '') $studentCode = 'STD-' . $studentId;
-$studentWatermark = $studentCode . ' • ' . $studentName;
-
 if ($isLectureOpen && !empty($videos)) {
   student_video_views_ensure_table($pdo);
 
@@ -287,11 +283,6 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
     </div>
   </div>
 </header>
-
-<div class="acc-screenWatermark" aria-hidden="true">
-  <span class="acc-screenWatermark__chip acc-screenWatermark__chip--one"><?php echo h($studentWatermark); ?></span>
-  <span class="acc-screenWatermark__chip acc-screenWatermark__chip--two"><?php echo h($studentWatermark); ?></span>
-</div>
 
 <main class="acc-lecturePage">
   <div class="container">
