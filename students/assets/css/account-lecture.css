@@ -350,12 +350,14 @@
 
 .acc-playerStage--immersive .acc-platformControls{
   opacity: 0;
+  visibility: hidden;
   transform: translateY(18px);
   pointer-events: none;
 }
 
 .acc-playerStage--immersive.acc-playerStage--controlsVisible .acc-platformControls{
   opacity: 1;
+  visibility: visible;
   transform: translateY(0);
   pointer-events: auto;
 }

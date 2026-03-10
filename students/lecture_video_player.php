@@ -217,7 +217,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
         <?php if (!empty($stats['blocked'])): ?>
           ⛔ لا يمكن تشغيل هذا الفيديو لأن عدد المشاهدات المسموحة انتهى.
         <?php else: ?>
-          🔒 هذه الصفحة محمية: تم تعطيل الكليك اليمين واختصارات أدوات المطور، مع طبقة حماية مائية على الفيديو وإرجاع تلقائي عند محاولات كشف أو نسخ المحتوى.
+          🔒 هذه الصفحة محمية: تم تعطيل الكليك اليمين واختصارات أدوات المطور، مع طبقة حماية مرئية على الفيديو وإرجاع تلقائي عند محاولة كشف أو نسخ المحتوى.
         <?php endif; ?>
       </div>
     </section>
@@ -271,6 +271,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   var protectedPageClosed = false;
   var devtoolsDetectionStrikes = 0;
   var controlsHideHandle = 0;
+  var lastImmersiveWakeAt = 0;
   var youtubePlayer = null;
   var youtubeApiReadyPromise = null;
   var youtubeTimeHandle = 0;
@@ -285,7 +286,8 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   const devtoolsCheckIntervalMs = 400;
   const fallbackHalfSeconds = 30;
   const seekDeltaSeconds = 10;
-  const immersiveControlsDelayMs = 1800;
+  const immersiveControlsAutoHideDelayMs = 1800;
+  const immersiveControlsWakeThrottleMs = 180;
   const youtubeStatePlaying = 1;
 
   function ensureValidHalfSeconds(nextValue) {
@@ -403,7 +405,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
     controlsHideHandle = window.setTimeout(function(){
       if (!document.fullscreenElement || !playerStage) return;
       playerStage.classList.remove('acc-playerStage--controlsVisible');
-    }, immersiveControlsDelayMs);
+    }, immersiveControlsAutoHideDelayMs);
   }
 
   function formatClock(seconds) {
@@ -767,6 +769,10 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   if (playerStage) {
     ['mousemove', 'touchstart', 'touchmove', 'pointerdown'].forEach(function(evt){
       playerStage.addEventListener(evt, function(){
+        if (!document.fullscreenElement) return;
+        var now = Date.now();
+        if (now - lastImmersiveWakeAt < immersiveControlsWakeThrottleMs) return;
+        lastImmersiveWakeAt = now;
         toggleImmersiveControlsVisibility(true);
       }, {passive:true});
     });
@@ -922,13 +928,6 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
     if (blocked) {
       e.preventDefault();
       closeProtectedPage('⛔ تم الرجوع إلى صفحة تفاصيل المحاضرة لحماية المحتوى عند محاولة فتح أدوات المطور.');
-    }
-  }, true);
-
-  document.addEventListener('keyup', function(e){
-    var key = String(e.key || '').toLowerCase();
-    if (key === 'printscreen') {
-      closeProtectedPage('⛔ تم إيقاف المشاهدة عند محاولة لقطة شاشة لحماية محتوى الفيديو.');
     }
   }, true);
 
