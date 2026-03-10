@@ -594,8 +594,22 @@
 }
 
 @media (max-width: 640px){
+  .acc-viewerFrameShell .acc-playerStage{
+    min-height: 0;
+  }
+
+  .acc-viewerFrameShell .acc-playerSurface{
+    min-height: 0;
+  }
+
   .acc-viewerHero__top{
     align-items:stretch;
+  }
+
+  .acc-viewerFrameShell .acc-playerStage .acc-platformControls{
+    position: static;
+    inset: auto;
+    margin: 10px;
   }
 
   .acc-playerToolbar{
