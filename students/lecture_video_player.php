@@ -184,32 +184,35 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
         <div class="acc-playerProtectionMask" aria-hidden="true"></div>
         <div class="acc-platformControls" id="lecturePlayerControls" hidden>
           <div class="acc-platformControls__group acc-platformControls__group--actions">
-            <button class="acc-modal-btn acc-modal-btn--primary acc-platformControls__iconBtn" type="button" id="lecturePlayerCtrlPlayPause" aria-label="تشغيل أو إيقاف الفيديو" disabled>تشغيل ▶️</button>
-            <button class="acc-modal-btn acc-modal-btn--ghost acc-platformControls__iconBtn" type="button" id="lecturePlayerCtrlSeekBack" aria-label="إرجاع عشر ثواني" disabled>رجوع 10 ث ⏪</button>
-            <button class="acc-modal-btn acc-modal-btn--ghost acc-platformControls__iconBtn" type="button" id="lecturePlayerCtrlSeekForward" aria-label="تقديم عشر ثواني" disabled>تقديم 10 ث ⏩</button>
-            <button class="acc-modal-btn acc-modal-btn--ghost acc-platformControls__iconBtn" type="button" id="lecturePlayerCtrlFullscreen" aria-label="تكبير المشغل" disabled>تكبير ⛶</button>
+            <button class="acc-modal-btn acc-modal-btn--primary acc-platformControls__iconBtn" type="button" id="lecturePlayerCtrlPlayPause" aria-label="تشغيل أو إيقاف الفيديو" disabled>▶️ تشغيل</button>
+            <button class="acc-modal-btn acc-modal-btn--ghost acc-platformControls__iconBtn" type="button" id="lecturePlayerCtrlSeekBack" aria-label="إرجاع عشر ثواني" disabled>⏪ رجوع 10 ث</button>
+            <button class="acc-modal-btn acc-modal-btn--ghost acc-platformControls__iconBtn" type="button" id="lecturePlayerCtrlSeekForward" aria-label="تقديم عشر ثواني" disabled>⏩ تقديم 10 ث</button>
+            <button class="acc-modal-btn acc-modal-btn--ghost acc-platformControls__iconBtn" type="button" id="lecturePlayerCtrlFullscreen" aria-label="تكبير المشغل" disabled>🖥️ تكبير</button>
           </div>
           <div class="acc-platformControls__group acc-platformControls__group--timeline">
-            <span class="acc-platformControls__label">الوقت</span>
+            <span class="acc-platformControls__label">⏱️ الوقت</span>
             <input class="acc-platformControls__timeline" type="range" id="lecturePlayerCtrlTimeline" min="0" max="0" step="1" value="0" aria-label="التحكم في وقت الفيديو" disabled>
             <span class="acc-platformControls__time" id="lecturePlayerCtrlTime">00:00 / 00:00</span>
           </div>
           <div class="acc-platformControls__group acc-platformControls__group--audio">
-            <span class="acc-platformControls__label">الصوت</span>
+            <span class="acc-platformControls__label">🔊 الصوت</span>
             <input class="acc-platformControls__range" type="range" id="lecturePlayerCtrlVolume" min="0" max="100" step="1" value="100" aria-label="مستوى الصوت" disabled>
           </div>
           <div class="acc-platformControls__group">
-            <label class="acc-platformControls__label" for="lecturePlayerCtrlQuality">الجودة</label>
+            <label class="acc-platformControls__label" for="lecturePlayerCtrlQuality">🎚️ الجودة</label>
             <select class="acc-platformControls__select" id="lecturePlayerCtrlQuality" aria-label="جودة الفيديو" disabled>
               <option value="auto">تلقائي</option>
             </select>
           </div>
           <div class="acc-platformControls__group">
-            <label class="acc-platformControls__label" for="lecturePlayerCtrlSpeed">السرعة</label>
+            <label class="acc-platformControls__label" for="lecturePlayerCtrlSpeed">⚡ السرعة</label>
             <select class="acc-platformControls__select" id="lecturePlayerCtrlSpeed" aria-label="سرعة التشغيل" disabled>
               <option value="1">1x</option>
             </select>
           </div>
+        </div>
+        <div class="acc-captureShield" id="lectureCaptureShield" aria-hidden="true">
+          ⚫️ تم تعتيم المشغل لحماية المحتوى أثناء محاولة تصوير الشاشة.
         </div>
       </div>
 
@@ -260,6 +263,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   var ctrlVolumeInput = document.getElementById('lecturePlayerCtrlVolume');
   var ctrlQualitySelect = document.getElementById('lecturePlayerCtrlQuality');
   var ctrlSpeedSelect = document.getElementById('lecturePlayerCtrlSpeed');
+  var captureShield = document.getElementById('lectureCaptureShield');
 
   var activeWatchToken = '';
   var countedToken = '';
@@ -289,6 +293,8 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   const immersiveControlsAutoHideDelayMs = 1800;
   const immersiveControlsWakeThrottleMs = 180;
   const youtubeStatePlaying = 1;
+  const captureShieldDurationMs = 2200;
+  var captureShieldHandle = 0;
 
   function ensureValidHalfSeconds(nextValue) {
     return Math.max(5, parseInt(nextValue || videoState.halfSeconds || fallbackHalfSeconds, 10));
@@ -366,7 +372,30 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
 
   function setPlayPauseLabel(isPlaying) {
     if (!ctrlPlayPauseBtn) return;
-    ctrlPlayPauseBtn.textContent = isPlaying ? 'إيقاف ⏸️' : 'تشغيل ▶️';
+    ctrlPlayPauseBtn.textContent = isPlaying ? '⏸️ إيقاف' : '▶️ تشغيل';
+  }
+
+  function hideCaptureShield() {
+    if (!captureShield) return;
+    captureShield.classList.remove('acc-captureShield--active');
+  }
+
+  function triggerCaptureShield(reason) {
+    if (!captureShield || !playerStage) return;
+    if (captureShieldHandle) {
+      window.clearTimeout(captureShieldHandle);
+      captureShieldHandle = 0;
+    }
+    if (reason) captureShield.textContent = reason;
+    captureShield.classList.add('acc-captureShield--active');
+    playerStage.classList.add('acc-playerStage--captureBlocked');
+    if (youtubePlayer) {
+      try { youtubePlayer.pauseVideo(); } catch(e) {}
+    }
+    captureShieldHandle = window.setTimeout(function(){
+      hideCaptureShield();
+      if (playerStage && playerStage.classList) playerStage.classList.remove('acc-playerStage--captureBlocked');
+    }, captureShieldDurationMs);
   }
 
   function setPlatformControlsVisible(visible) {
@@ -761,7 +790,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
     if (ctrlFullscreenBtn) ctrlFullscreenBtn.addEventListener('click', toggleFullscreen);
 
     document.addEventListener('fullscreenchange', function(){
-      fullscreenBtn.textContent = document.fullscreenElement ? 'إغلاق التكبير 🡼' : 'تكبير ⛶';
+      fullscreenBtn.textContent = document.fullscreenElement ? '🡼 إغلاق التكبير' : '🖥️ تكبير';
       toggleImmersiveControlsVisibility(true);
     });
   }
@@ -920,6 +949,13 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   document.addEventListener('contextmenu', function(e){ e.preventDefault(); });
   document.addEventListener('mousedown', function(e){ if (e.button === 2) e.preventDefault(); }, true);
   document.addEventListener('keydown', function(e){
+    var captureKey = String(e.key || '').toLowerCase();
+    if (captureKey === 'printscreen' || (e.metaKey && e.shiftKey && (captureKey === '3' || captureKey === '4' || captureKey === '5'))) {
+      triggerCaptureShield('⚫️ تم تعتيم المشغل لحماية المحتوى أثناء محاولة تصوير الشاشة.');
+    }
+  }, true);
+
+  document.addEventListener('keydown', function(e){
     var key = String(e.key || '').toLowerCase();
     var blocked =
       key === 'f12' ||
@@ -933,8 +969,11 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
 
   document.addEventListener('visibilitychange', function(){
     if (document.visibilityState === 'hidden') {
+      triggerCaptureShield('⚫️ تم تعتيم المشغل تلقائيًا عند محاولة تصوير الشاشة أو مغادرة الصفحة.');
       sendProgress('heartbeat');
+      return;
     }
+    hideCaptureShield();
   });
 
   window.addEventListener('beforeunload', function(){
