@@ -101,6 +101,22 @@ if (!function_exists('platform_features_ensure_tables')) {
     ");
 
     $pdo->exec("
+      CREATE TABLE IF NOT EXISTS student_chat_message_reactions (
+        id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+        message_id BIGINT(20) UNSIGNED NOT NULL,
+        student_id INT(10) UNSIGNED NOT NULL,
+        reaction_type ENUM('like','love','care','wow','haha','sad','angry') NOT NULL DEFAULT 'like',
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (id),
+        UNIQUE KEY uniq_student_chat_message_reaction (message_id, student_id),
+        KEY idx_student_chat_message_reactions_student (student_id),
+        CONSTRAINT fk_student_chat_message_reactions_message FOREIGN KEY (message_id) REFERENCES student_chat_messages(id) ON DELETE CASCADE,
+        CONSTRAINT fk_student_chat_message_reactions_student FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+    ");
+
+    $pdo->exec("
       CREATE TABLE IF NOT EXISTS attendance_sessions (
         id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
         title VARCHAR(190) NOT NULL,

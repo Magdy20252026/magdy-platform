@@ -51,6 +51,15 @@ function upload_chat_image(string $field): ?string {
   if (!move_uploaded_file($tmp, $targetFs)) throw new RuntimeException('تعذر حفظ الصورة.');
   return 'uploads/chat_profiles/' . $filename;
 }
+$reactionTypes = [
+  'like'  => '👍 إعجاب',
+  'love'  => '❤️ حب',
+  'care'  => '🤗 دعم',
+  'wow'   => '😮 واو',
+  'haha'  => '😂 هاها',
+  'sad'   => '😢 حزين',
+  'angry' => '😡 غاضب',
+];
 
 $adminId = (int)($_SESSION['admin_id'] ?? 0);
 $adminRole = (string)($_SESSION['admin_role'] ?? 'مشرف');
@@ -110,22 +119,29 @@ if (($_POST['action'] ?? '') === 'send_message') {
 if (isset($_GET['profile_saved'])) $success = 'تم تحديث ملف الشات الخاص بك.';
 if (isset($_GET['sent'])) $success = 'تم إرسال الرسالة.';
 
-$profileStmt = $pdo->prepare('SELECT * FROM admin_chat_profiles WHERE admin_id=? LIMIT 1');
-$profileStmt->execute([$adminId]);
-$profile = $profileStmt->fetch(PDO::FETCH_ASSOC) ?: ['display_name' => $adminUsername, 'image_path' => null, 'is_online' => 0];
+$profile = ['display_name' => $adminUsername, 'image_path' => null, 'is_online' => 0];
+$conversations = [];
+$chatMessageReactions = [];
+try {
+  $profileStmt = $pdo->prepare('SELECT * FROM admin_chat_profiles WHERE admin_id=? LIMIT 1');
+  $profileStmt->execute([$adminId]);
+  $profile = $profileStmt->fetch(PDO::FETCH_ASSOC) ?: $profile;
 
-$conversationsStmt = $pdo->prepare(" 
-  SELECT c.id, c.student_id, c.updated_at, s.full_name, s.student_phone, s.grade_id, g.name AS grade_name,
-         (SELECT message_text FROM student_chat_messages m WHERE m.conversation_id=c.id ORDER BY m.id DESC LIMIT 1) AS last_message,
-         (SELECT COUNT(*) FROM student_chat_messages m2 WHERE m2.conversation_id=c.id AND m2.sender_type='student' AND m2.is_read=0) AS unread_count
-  FROM student_chat_conversations c
-  INNER JOIN students s ON s.id = c.student_id
-  INNER JOIN grades g ON g.id = s.grade_id
-  WHERE c.admin_id = ?
-  ORDER BY c.updated_at DESC, c.id DESC
-");
-$conversationsStmt->execute([$adminId]);
-$conversations = $conversationsStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+  $conversationsStmt = $pdo->prepare(" 
+    SELECT c.id, c.student_id, c.updated_at, s.full_name, s.student_phone, s.grade_id, COALESCE(g.name, 'بدون صف') AS grade_name,
+           (SELECT message_text FROM student_chat_messages m WHERE m.conversation_id=c.id ORDER BY m.id DESC LIMIT 1) AS last_message,
+           (SELECT COUNT(*) FROM student_chat_messages m2 WHERE m2.conversation_id=c.id AND m2.sender_type='student' AND m2.is_read=0) AS unread_count
+    FROM student_chat_conversations c
+    INNER JOIN students s ON s.id = c.student_id
+    LEFT JOIN grades g ON g.id = s.grade_id
+    WHERE c.admin_id = ?
+    ORDER BY c.updated_at DESC, c.id DESC
+  ");
+  $conversationsStmt->execute([$adminId]);
+  $conversations = $conversationsStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+} catch (Throwable $e) {
+  $error = $error ?: 'تعذر تحميل محادثات الطلاب حالياً.';
+}
 
 $selectedChatId = (int)($_GET['chat_id'] ?? 0);
 if ($selectedChatId <= 0 && !empty($conversations)) $selectedChatId = (int)$conversations[0]['id'];
@@ -133,21 +149,35 @@ if ($selectedChatId <= 0 && !empty($conversations)) $selectedChatId = (int)$conv
 $chatMeta = null;
 $messages = [];
 if ($selectedChatId > 0) {
-  $stmt = $pdo->prepare(" 
-    SELECT c.*, s.full_name, s.student_phone, g.name AS grade_name
-    FROM student_chat_conversations c
-    INNER JOIN students s ON s.id = c.student_id
-    INNER JOIN grades g ON g.id = s.grade_id
-    WHERE c.id=? AND c.admin_id=?
-    LIMIT 1
-  ");
-  $stmt->execute([$selectedChatId, $adminId]);
-  $chatMeta = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
-  if ($chatMeta) {
-    $pdo->prepare("UPDATE student_chat_messages SET is_read=1 WHERE conversation_id=? AND sender_type='student'")->execute([$selectedChatId]);
-    $stmt = $pdo->prepare('SELECT * FROM student_chat_messages WHERE conversation_id=? ORDER BY id ASC');
-    $stmt->execute([$selectedChatId]);
-    $messages = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+  try {
+    $stmt = $pdo->prepare(" 
+      SELECT c.*, s.full_name, s.student_phone, COALESCE(g.name, 'بدون صف') AS grade_name
+      FROM student_chat_conversations c
+      INNER JOIN students s ON s.id = c.student_id
+      LEFT JOIN grades g ON g.id = s.grade_id
+      WHERE c.id=? AND c.admin_id=?
+      LIMIT 1
+    ");
+    $stmt->execute([$selectedChatId, $adminId]);
+    $chatMeta = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+    if ($chatMeta) {
+      $pdo->prepare("UPDATE student_chat_messages SET is_read=1 WHERE conversation_id=? AND sender_type='student'")->execute([$selectedChatId]);
+      $stmt = $pdo->prepare('SELECT * FROM student_chat_messages WHERE conversation_id=? ORDER BY id ASC');
+      $stmt->execute([$selectedChatId]);
+      $messages = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+      $adminMessageIds = array_values(array_map(fn($row) => (int)$row['id'], array_filter($messages, fn($row) => (string)($row['sender_type'] ?? '') === 'admin')));
+      if ($adminMessageIds) {
+        $in = implode(',', array_fill(0, count($adminMessageIds), '?'));
+        $params = array_merge([(int)$chatMeta['student_id']], $adminMessageIds);
+        $stmt = $pdo->prepare("SELECT message_id, reaction_type FROM student_chat_message_reactions WHERE student_id=? AND message_id IN ($in)");
+        $stmt->execute($params);
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) ?: [] as $reactionRow) {
+          $chatMessageReactions[(int)$reactionRow['message_id']] = (string)$reactionRow['reaction_type'];
+        }
+      }
+    }
+  } catch (Throwable $e) {
+    $error = $error ?: 'تعذر تحميل تفاصيل المحادثة الآن.';
   }
 }
 
@@ -206,6 +236,7 @@ if ($adminRole !== 'مدير') {
     .msg.student{background:rgba(59,130,246,.08);margin-right:auto}
     .msg.admin{background:rgba(34,197,94,.08);margin-left:auto}
     .msg small{display:block;margin-top:6px;color:var(--muted)}
+    .msg-reaction{display:inline-flex;align-items:center;gap:6px;margin-top:10px;padding:8px 12px;border-radius:999px;background:rgba(59,130,246,.08);font-weight:900;color:var(--text)}
     .send-box{margin-top:14px;display:grid;gap:10px}
     .send-box textarea{min-height:110px;width:100%;border:1px solid var(--line);border-radius:16px;padding:14px;background:var(--panel);color:var(--text);font:inherit}
     .chat-empty{padding:22px;border-radius:18px;border:1px dashed var(--line);color:var(--muted);font-weight:900;text-align:center}
@@ -270,10 +301,13 @@ if ($adminRole !== 'مدير') {
           </div>
           <div class="messages">
             <?php foreach ($messages as $message): ?>
-              <?php $senderType = (string)($message['sender_type'] ?? 'student'); ?>
+              <?php $senderType = (string)($message['sender_type'] ?? 'student'); $messageReaction = $chatMessageReactions[(int)($message['id'] ?? 0)] ?? null; ?>
               <div class="msg <?php echo $senderType === 'admin' ? 'admin' : 'student'; ?>">
                 <div><?php echo nl2br(h((string)$message['message_text'])); ?></div>
                 <small><?php echo $senderType === 'admin' ? '👨‍🏫 أنت' : '🧑‍🎓 الطالب'; ?> — <?php echo h((string)$message['created_at']); ?></small>
+                <?php if ($senderType === 'admin' && $messageReaction && isset($reactionTypes[$messageReaction])): ?>
+                  <div class="msg-reaction">تفاعل الطالب: <?php echo h((string)$reactionTypes[$messageReaction]); ?></div>
+                <?php endif; ?>
               </div>
             <?php endforeach; ?>
           </div>
