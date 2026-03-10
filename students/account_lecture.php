@@ -200,7 +200,6 @@ $selectedVideoId = 0;
 $selectedPdfId = 0;
 $videosForJs = [];
 $selectedVideoRow = null;
-$initialVideoPlayerHtml = '';
 
 if ($isLectureOpen && !empty($videos)) {
   student_video_views_ensure_table($pdo);
@@ -242,14 +241,6 @@ if ($isLectureOpen && !empty($videos)) {
       break;
     }
   }
-
-  if (is_array($selectedVideoRow) && !empty($selectedVideoRow) && empty($selectedVideoRow['is_blocked'])) {
-    $initialVideoPlayerHtml = student_build_video_player_html($selectedVideoRow);
-  }
-}
-
-if ($isLectureOpen && !empty($pdfs[0]['id'])) {
-  $selectedPdfId = (int)$pdfs[0]['id'];
 
 }
 
@@ -396,15 +387,11 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
       <?php else: ?>
         <?php if ($isLectureOpen): ?>
           <div class="acc-playerShell">
-            <div class="acc-playerStage" id="lecturePlayerStage"<?php echo ($selectedVideoRow && empty($selectedVideoRow['is_blocked'])) ? '' : ' hidden'; ?>>
+            <div class="acc-playerStage" id="lecturePlayerStage"<?php echo $selectedVideoId > 0 ? '' : ' hidden'; ?>>
               <div class="acc-playerSurface" id="lecturePlayerSurface">
-                <?php if ($initialVideoPlayerHtml !== ''): ?>
-                  <?php echo $initialVideoPlayerHtml; ?>
-                <?php else: ?>
-                  <div class="acc-playerPlaceholder" id="lecturePlayerPlaceholder">
-                    اختر الفيديو من القائمة ثم اضغط <b>ابدأ المشاهدة</b> ليتم تشغيله داخل بلاير المنصة.
-                  </div>
-                <?php endif; ?>
+                <div class="acc-playerPlaceholder" id="lecturePlayerPlaceholder">
+                  اختر الفيديو من القائمة ثم اضغط <b>ابدأ المشاهدة</b> ليتم تشغيله داخل بلاير المنصة.
+                </div>
               </div>
               <div class="acc-playerOverlay">
                 <span class="acc-playerOverlay__chip"><?php echo h($studentWatermark); ?></span>
@@ -953,9 +940,6 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
     renderPlaceholder('اختر الفيديو من القائمة ثم اضغط <b>ابدأ المشاهدة</b> ليتم تشغيله داخل بلاير المنصة.');
   }
   renderSelection();
-  if (selectedVideoId && videoMap[String(selectedVideoId)] && !videoMap[String(selectedVideoId)].is_blocked) {
-    startCurrentVideo();
-  }
 })();
 </script>
 
