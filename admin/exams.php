@@ -1,6 +1,8 @@
 <?php
 require __DIR__ . '/inc/db.php';
 require __DIR__ . '/inc/auth.php';
+require __DIR__ . '/../inc/platform_features.php';
+require __DIR__ . '/../students/inc/assessments.php';
 
 require_login();
 try {
@@ -68,6 +70,7 @@ $pdo->exec("
     CONSTRAINT fk_exam_bank FOREIGN KEY (bank_id) REFERENCES exam_question_banks(id) ON DELETE CASCADE
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
 ");
+student_assessment_ensure_attempt_tables($pdo);
 
 /* =========================
    Lists
