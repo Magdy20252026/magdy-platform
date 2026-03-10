@@ -126,6 +126,12 @@ $isFinished = (bool)($payload['is_finished'] ?? false);
 $questions = (array)($payload['questions'] ?? []);
 $attemptRow = (array)($payload['attempt'] ?? []);
 $remainingSeconds = (int)($payload['remaining_seconds'] ?? 0);
+$finishedTimerLabel = '✅ تم التسليم';
+if ((string)($attemptRow['status'] ?? '') === 'expired') {
+  $finishedTimerLabel = '⏱️ انتهى الوقت';
+} elseif ((string)($attemptRow['status'] ?? '') === 'in_progress') {
+  $finishedTimerLabel = '⏱️ المتبقي: ' . fmt_timer($remainingSeconds);
+}
 $backHref = 'account.php?page=' . rawurlencode((string)($config['page'] ?? 'home'));
 $pageTitle = $config ? ($config['label'] . ' - ' . $platformName) : ('المحتوى - ' . $platformName);
 ?>
@@ -217,7 +223,7 @@ $pageTitle = $config ? ($config['label'] . ' - ' . $platformName) : ('المحت
             </span>
             <span class="timer-pill" id="assessmentTimer">
               <?php if ($isFinished): ?>
-                <?php echo ((string)($attemptRow['status'] ?? '') === 'expired') ? '⏱️ انتهى الوقت' : '✅ تم التسليم'; ?>
+                <?php echo h($finishedTimerLabel); ?>
               <?php else: ?>
                 <?php echo '⏱️ المتبقي: ' . h(fmt_timer($remainingSeconds)); ?>
               <?php endif; ?>

@@ -258,7 +258,7 @@ function student_assessment_normalize_attempt_timing(PDO $pdo, string $type, int
     $stmt = $pdo->prepare($sql);
     $stmt->execute($params);
   } catch (Throwable $e) {
-    // non-fatal
+    error_log('Failed to normalize assessment timing: ' . $e->getMessage());
   }
 }
 
@@ -462,10 +462,7 @@ function student_assessment_create_attempt(PDO $pdo, int $studentId, int $gradeI
     $maxScore += (float)($question['degree'] ?? 0);
   }
 
-  $attemptDurationMinutes = student_assessment_resolve_duration_minutes(
-    (int)($item['duration_minutes'] ?? 0),
-    (int)($item['duration_minutes'] ?? 0)
-  );
+  $attemptDurationMinutes = max(1, (int)($item['duration_minutes'] ?? 0));
 
   try {
     $pdo->beginTransaction();
