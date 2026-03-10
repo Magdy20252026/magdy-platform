@@ -61,6 +61,7 @@ if ($action === 'start') {
   }
 
   $existingToken = '';
+  $existingWatch = [];
   foreach ($_SESSION['lecture_video_watch'] as $token => $watch) {
     if (
       (int)($watch['student_id'] ?? 0) === $studentId &&
@@ -68,18 +69,22 @@ if ($action === 'start') {
       empty($watch['counted'])
     ) {
       $existingToken = (string)$token;
+      $existingWatch = is_array($watch) ? $watch : [];
       break;
     }
   }
 
+  $restoredWatchedSeconds = max(0, (int)($existingWatch['watched_seconds'] ?? 0));
+  $startedAt = (int)($existingWatch['started_at'] ?? 0);
+  if ($startedAt <= 0) $startedAt = time();
   $token = $existingToken !== '' ? $existingToken : bin2hex(random_bytes(18));
   $_SESSION['lecture_video_watch'][$token] = [
     'student_id' => $studentId,
     'video_id' => $videoId,
     'lecture_id' => $lectureId,
-    'started_at' => time(),
+    'started_at' => $startedAt,
     'last_ping_at' => time(),
-    'watched_seconds' => 0,
+    'watched_seconds' => $restoredWatchedSeconds,
     'half_seconds' => $halfSeconds,
     'counted' => false,
   ];
@@ -104,7 +109,7 @@ if ($action === 'start') {
     'message' => 'تم تجهيز الفيديو داخل المنصة.',
     'watch_token' => $token,
     'half_seconds' => $halfSeconds,
-    'watched_seconds' => 0,
+    'watched_seconds' => $restoredWatchedSeconds,
     'player_html' => $playerHtml,
     'stats' => $stats,
     'video' => [

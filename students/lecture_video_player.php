@@ -158,17 +158,12 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
           </div>
         </div>
 
-        <div class="acc-playerToolbar__actions">
-          <button class="acc-modal-btn acc-modal-btn--primary" type="button" id="lecturePlayerStartBtn"<?php echo !empty($stats['blocked']) ? ' disabled' : ''; ?>>▶️ ابدأ تشغيل الفيديو</button>
-          <button class="acc-modal-btn acc-modal-btn--ghost" type="button" id="lecturePlayerFullscreenBtn"<?php echo !empty($stats['blocked']) ? ' disabled' : ''; ?>>⛶ تكبير المشغل</button>
-        </div>
       </div>
 
       <div class="acc-viewerStats">
         <span class="pill">⏱️ المدة: <b><?php echo (int)($video['duration_minutes'] ?? 0); ?> دقيقة</b></span>
         <span class="pill">👁️ المستخدم: <b id="videoViewsUsed"><?php echo (int)($stats['used'] ?? 0); ?></b> / <b id="videoViewsAllowed"><?php echo (int)($stats['allowed'] ?? 1); ?></b></span>
         <span class="pill">🟢 المتبقي: <b id="videoViewsRemaining"><?php echo (int)($stats['remaining'] ?? 0); ?></b></span>
-        <span class="pill">⌛ نصف المدة: <b id="videoHalfSeconds"><?php echo (int)$halfSeconds; ?></b> ثانية</span>
       </div>
     </section>
 
@@ -179,7 +174,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
             <?php if (!empty($stats['blocked'])): ?>
               ⛔ انتهت عدد المشاهدات المسموحة لهذا الفيديو، ولن يتم تشغيله مرة أخرى.
             <?php else: ?>
-              اضغط <b>ابدأ تشغيل الفيديو</b> لفتح الفيديو داخل مشغل المنصة. يبدأ احتساب الزمن من لحظة ضغطك على زر التشغيل، ويتم تسجيل مشاهدة عند تجاوز نصف مدة الفيديو.
+              يتم تجهيز الفيديو داخل مشغل المنصة تلقائيًا، ويمكنك تشغيله من زر التشغيل داخل الفيديو نفسه.
             <?php endif; ?>
           </div>
         </div>
@@ -188,22 +183,6 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
         </div>
         <div class="acc-platformControls" id="lecturePlayerControls" hidden>
           <button class="acc-modal-btn acc-modal-btn--primary" type="button" id="lecturePlayerCtrlPlayPause" aria-label="تشغيل أو إيقاف الفيديو" disabled>▶️ تشغيل</button>
-          <button class="acc-modal-btn acc-modal-btn--ghost" type="button" id="lecturePlayerCtrlBack" aria-label="الرجوع 10 ثواني" disabled>⏪ رجوع 10ث</button>
-          <button class="acc-modal-btn acc-modal-btn--ghost" type="button" id="lecturePlayerCtrlForward" aria-label="التقديم 10 ثواني" disabled>⏩ تقديم 10ث</button>
-          <button class="acc-modal-btn acc-modal-btn--ghost" type="button" id="lecturePlayerCtrlFullscreen" aria-label="تكبير شاشة المشغل" disabled>⛶ تكبير</button>
-          <label class="acc-platformControls__label" for="lecturePlayerCtrlTimeline">الوقت</label>
-          <input class="acc-platformControls__range acc-platformControls__timeline" id="lecturePlayerCtrlTimeline" type="range" min="0" max="0" step="1" value="0" aria-label="التحكم في وقت الفيديو" aria-valuetext="00:00 / 00:00" disabled>
-          <span class="acc-platformControls__time" id="lecturePlayerCtrlTimeLabel" aria-live="polite">00:00 / 00:00</span>
-          <label class="acc-platformControls__label" for="lecturePlayerCtrlVolume">الصوت</label>
-          <input class="acc-platformControls__range" id="lecturePlayerCtrlVolume" type="range" min="0" max="100" step="1" value="100" aria-label="مستوى صوت الفيديو" aria-valuetext="100%" disabled>
-          <label class="acc-platformControls__label" for="lecturePlayerCtrlQuality">الجودة</label>
-          <select class="acc-platformControls__select" id="lecturePlayerCtrlQuality" disabled>
-            <option value="auto">تلقائي</option>
-          </select>
-          <label class="acc-platformControls__label" for="lecturePlayerCtrlSpeed">السرعة</label>
-          <select class="acc-platformControls__select" id="lecturePlayerCtrlSpeed" disabled>
-            <option value="1">1x</option>
-          </select>
         </div>
       </div>
 
@@ -237,23 +216,21 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
 
   var surface = document.getElementById('lecturePlayerSurface');
   var noticeEl = document.getElementById('lecturePlayerNotice');
-  var startBtn = document.getElementById('lecturePlayerStartBtn');
-  var fullscreenBtn = document.getElementById('lecturePlayerFullscreenBtn');
+  var startBtn = null;
+  var fullscreenBtn = null;
   var playerStage = document.getElementById('lecturePlayerStage');
   var viewsAllowedEl = document.getElementById('videoViewsAllowed');
   var viewsUsedEl = document.getElementById('videoViewsUsed');
   var viewsRemainingEl = document.getElementById('videoViewsRemaining');
-  var halfSecondsEl = document.getElementById('videoHalfSeconds');
+  var halfSecondsEl = null;
   var platformControls = document.getElementById('lecturePlayerControls');
   var ctrlPlayPauseBtn = document.getElementById('lecturePlayerCtrlPlayPause');
-  var ctrlBackBtn = document.getElementById('lecturePlayerCtrlBack');
-  var ctrlForwardBtn = document.getElementById('lecturePlayerCtrlForward');
-  var ctrlFullscreenBtn = document.getElementById('lecturePlayerCtrlFullscreen');
-  var ctrlTimelineInput = document.getElementById('lecturePlayerCtrlTimeline');
-  var ctrlTimeLabel = document.getElementById('lecturePlayerCtrlTimeLabel');
-  var ctrlVolumeInput = document.getElementById('lecturePlayerCtrlVolume');
-  var ctrlQualitySelect = document.getElementById('lecturePlayerCtrlQuality');
-  var ctrlSpeedSelect = document.getElementById('lecturePlayerCtrlSpeed');
+  var ctrlFullscreenBtn = null;
+  var ctrlTimelineInput = null;
+  var ctrlTimeLabel = null;
+  var ctrlVolumeInput = null;
+  var ctrlQualitySelect = null;
+  var ctrlSpeedSelect = null;
 
   var activeWatchToken = '';
   var countedToken = '';
@@ -268,6 +245,10 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   var youtubeApiReadyPromise = null;
   var youtubeTimeHandle = 0;
   var timelineDragging = false;
+  var maxReachedSeconds = 0;
+  var rewindCorrectionLock = false;
+  var playbackBootstrapped = false;
+  var startRequestInFlight = false;
   // tuned for typical browser UI gaps so docked DevTools detection triggers before playback continues
   const devtoolsWidthGapThreshold = 160;
   const devtoolsHeightGapThreshold = 140;
@@ -345,7 +326,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   }
 
   function setPlatformControlsEnabled(enabled) {
-    [ctrlPlayPauseBtn, ctrlBackBtn, ctrlForwardBtn, ctrlFullscreenBtn, ctrlTimelineInput, ctrlVolumeInput, ctrlQualitySelect, ctrlSpeedSelect].forEach(function(el){
+    [ctrlPlayPauseBtn, ctrlFullscreenBtn, ctrlTimelineInput, ctrlVolumeInput, ctrlQualitySelect, ctrlSpeedSelect].forEach(function(el){
       if (el) el.disabled = !enabled;
     });
   }
@@ -381,8 +362,6 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   }
 
   function refreshYoutubeTimeControl(force) {
-    if (!ctrlTimelineInput || !ctrlTimeLabel) return;
-
     var current = 0;
     var duration = 0;
     if (youtubePlayer) {
@@ -394,6 +373,15 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
     if (!isFinite(duration) || duration < 0) duration = 0;
     current = Math.max(0, current);
     if (duration > 0) current = Math.min(current, duration);
+    if (maxReachedSeconds > 5 && current < (maxReachedSeconds - 2) && !rewindCorrectionLock && youtubePlayer) {
+      rewindCorrectionLock = true;
+      youtubePlayer.seekTo(maxReachedSeconds, true);
+      current = maxReachedSeconds;
+      window.setTimeout(function(){ rewindCorrectionLock = false; }, 220);
+    }
+    maxReachedSeconds = Math.max(maxReachedSeconds, current);
+
+    if (!ctrlTimelineInput || !ctrlTimeLabel) return;
 
     ctrlTimelineInput.max = String(Math.max(0, Math.floor(duration)));
     if (!timelineDragging || force) {
@@ -495,8 +483,8 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
       youtubePlayer = new window.YT.Player(frame.id, {
         events: {
           onReady: function(){
-            setPlatformControlsVisible(true);
-            setPlatformControlsEnabled(true);
+            setPlatformControlsVisible(false);
+            setPlatformControlsEnabled(false);
             setPlayPauseLabel(false);
             refreshYoutubeQualityOptions();
             refreshYoutubeSpeedOptions();
@@ -531,7 +519,6 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
     if (viewsUsedEl) viewsUsedEl.textContent = videoState.viewsUsed;
     if (viewsRemainingEl) viewsRemainingEl.textContent = videoState.viewsRemaining;
 
-    if (videoState.isBlocked && startBtn) startBtn.disabled = true;
     if (videoState.isBlocked && fullscreenBtn && !document.fullscreenElement) fullscreenBtn.disabled = true;
   }
 
@@ -562,7 +549,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
     progressHandle = window.setInterval(function(){
       if (!activeWatchToken || countedToken === activeWatchToken) return;
       var remaining = Math.max(0, videoState.halfSeconds - currentWatchedSeconds());
-      updateNotice('⏱️ المؤقت يعمل في الخلفية. سيتم احتساب المشاهدة بعد ' + remaining + ' ثانية من وقت ضغطك على زر التشغيل.', false);
+      if (remaining <= 0) return;
     }, 1000);
   }
 
@@ -624,11 +611,10 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
       updateNotice('⛔ انتهت عدد المشاهدات المسموحة لهذا الفيديو.', true);
       return;
     }
-
-    if (startBtn) {
-      startBtn.disabled = true;
-      startBtn.textContent = '⏳ جاري تجهيز المشغل...';
+    if (startRequestInFlight || playbackBootstrapped) {
+      return;
     }
+    startRequestInFlight = true;
 
     renderPlaceholder('⏳ جاري تجهيز الفيديو داخل مشغل المنصة...');
 
@@ -643,10 +629,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
     }).then(function(res){
       return res.json();
     }).then(function(data){
-      if (startBtn) {
-        startBtn.disabled = false;
-        startBtn.textContent = '▶️ إعادة تشغيل المؤقت';
-      }
+      startRequestInFlight = false;
 
       if (!data || !data.ok) {
         renderPlaceholder('❌ تعذر تشغيل الفيديو داخل بلاير المنصة.');
@@ -657,6 +640,8 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
 
       activeWatchToken = data.watch_token || '';
       countedToken = '';
+      playbackBootstrapped = true;
+      maxReachedSeconds = Math.max(0, parseInt(data.watched_seconds || 0, 10));
       if (typeof data.half_seconds !== 'undefined') {
         videoState.halfSeconds = ensureValidHalfSeconds(data.half_seconds);
         if (halfSecondsEl) halfSecondsEl.textContent = videoState.halfSeconds;
@@ -678,13 +663,10 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
           setPlatformControlsEnabled(false);
         }
         startBackgroundTracking(parseInt(data.watched_seconds || 0, 10));
-        updateNotice('▶️ تم فتح الفيديو داخل مشغل المنصة. المؤقت الخلفي بدأ الآن وسيتم احتساب المشاهدة بعد تجاوز نصف المدة.', false);
+        updateNotice('✅ تم تجهيز الفيديو. شغّل الفيديو من زر التشغيل داخل المشغل.', false);
       });
     }).catch(function(){
-      if (startBtn) {
-        startBtn.disabled = false;
-        startBtn.textContent = '▶️ ابدأ تشغيل الفيديو';
-      }
+      startRequestInFlight = false;
       renderPlaceholder('❌ حدث خطأ أثناء الاتصال بالسيرفر.');
       updateNotice('❌ حدث خطأ أثناء تجهيز المشغل.', true);
     });
@@ -696,7 +678,6 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
     stopProgressTimers();
     updateNotice(reason, true);
     renderPlaceholder(reason);
-    if (startBtn) startBtn.disabled = true;
     if (fullscreenBtn) fullscreenBtn.disabled = true;
 
     if (document.fullscreenElement && document.exitFullscreen) {
@@ -704,10 +685,6 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
     }
 
     window.location.replace('account_lecture.php?lecture_id=' + lectureId);
-  }
-
-  if (startBtn) {
-    startBtn.addEventListener('click', startPlayback);
   }
 
   if (fullscreenBtn && playerStage) {
@@ -737,28 +714,6 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
       } else {
         youtubePlayer.playVideo();
       }
-    });
-  }
-
-  if (ctrlBackBtn) {
-    ctrlBackBtn.addEventListener('click', function(){
-      if (!youtubePlayer) return;
-      var current = 0;
-      try { current = youtubePlayer.getCurrentTime() || 0; } catch(e) {}
-      youtubePlayer.seekTo(Math.max(0, current - 10), true);
-    });
-  }
-
-  if (ctrlForwardBtn) {
-    ctrlForwardBtn.addEventListener('click', function(){
-      if (!youtubePlayer) return;
-      var current = 0;
-      var duration = 0;
-      try { current = youtubePlayer.getCurrentTime() || 0; } catch(e) {}
-      try { duration = youtubePlayer.getDuration() || 0; } catch(e) {}
-      var nextTime = current + 10;
-      if (duration > 0) nextTime = Math.min(nextTime, duration);
-      youtubePlayer.seekTo(Math.max(0, nextTime), true);
     });
   }
 
@@ -841,21 +796,15 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
       if (ctrlPlayPauseBtn) ctrlPlayPauseBtn.click();
       return;
     }
-    if (key === 'arrowleft') {
-      e.preventDefault();
-      if (ctrlBackBtn) ctrlBackBtn.click();
-      return;
-    }
-    if (key === 'arrowright') {
-      e.preventDefault();
-      if (ctrlForwardBtn) ctrlForwardBtn.click();
-      return;
-    }
     if (key === 'f') {
       e.preventDefault();
       if (ctrlFullscreenBtn) ctrlFullscreenBtn.click();
     }
   });
+
+  if (!videoState.isBlocked) {
+    startPlayback();
+  }
 
   document.addEventListener('contextmenu', function(e){ e.preventDefault(); });
   document.addEventListener('mousedown', function(e){ if (e.button === 2) e.preventDefault(); }, true);
