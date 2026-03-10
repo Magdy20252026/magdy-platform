@@ -93,9 +93,9 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   <link rel="stylesheet" href="assets/css/account-lecture.css?v=<?php echo h($lecCssVer); ?>">
 
   <style>
-    .pill{padding:10px 12px;border:1px solid #ddd;border-radius:14px;font-weight:900}
+    .pill{padding:10px 12px;border:1px solid var(--border);border-radius:14px;font-weight:900}
     .acc-modal-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:10px 14px;border:2px solid transparent;border-radius:12px;font-weight:700;cursor:pointer;font-family:inherit;font-size:1em;text-decoration:none}
-    .acc-modal-btn--primary{background:#111;color:#fff}
+    .acc-modal-btn--primary{background:var(--btn-solid-bg);color:var(--btn-solid-text)}
     .acc-modal-btn--ghost{background:var(--page-bg);border-color:var(--border);color:var(--text)}
   </style>
 

@@ -644,8 +644,8 @@ if ($cssVer === '' || $cssVer === '0') $cssVer = (string)time();
     }
     .acc-actionsRow{display:flex;gap:10px;flex-wrap:wrap;margin:10px 0}
     .acc-btnx{display:inline-flex;align-items:center;gap:8px;padding:10px 14px;border-radius:12px;font-weight:900;text-decoration:none;cursor:pointer;border:none;font-family:inherit;font-size:1em}
-    .acc-btnx--solid{background:#111;color:#fff}
-    .acc-btnx--ghost{background:transparent;border:2px solid #111;color:#111}
+    .acc-btnx--solid{background:var(--btn-solid-bg);color:var(--btn-solid-text)}
+    .acc-btnx--ghost{background:transparent;border:2px solid var(--text);color:var(--text)}
     /* Stats grid */
     .acc-stats{margin:20px 0}
     .acc-stats__grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
@@ -1468,23 +1468,23 @@ if ($cssVer === '' || $cssVer === '0') $cssVer = (string)time();
 
 <!-- ✅ Redeem Code Modal -->
 <div id="redeemModal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.55);align-items:center;justify-content:center;" role="dialog" aria-modal="true" aria-label="تفعيل كود">
-  <div style="background:var(--card-bg,#fff);border-radius:18px;padding:28px 24px;max-width:420px;width:calc(100% - 32px);box-shadow:0 8px 40px rgba(0,0,0,.25);position:relative;font-family:inherit;">
+  <div style="background:var(--card-bg,#fff);color:var(--text,#111);border-radius:18px;padding:28px 24px;max-width:420px;width:calc(100% - 32px);box-shadow:0 8px 40px rgba(0,0,0,.25);position:relative;font-family:inherit;">
     <button onclick="closeRedeemModal()" style="position:absolute;top:12px;left:12px;background:none;border:none;font-size:1.4em;cursor:pointer;color:var(--muted,#888);" aria-label="إغلاق">✖</button>
     <h3 style="margin:0 0 14px;font-size:1.2em;">🎫 تفعيل كود اشتراك</h3>
 
     <div id="redeemMsg" style="display:none;padding:10px 14px;border-radius:10px;margin-bottom:12px;font-weight:700;"></div>
 
     <div id="redeemCodeStep">
-      <input id="redeemCodeInput" type="text" placeholder="XXXX-XXXX-XXXX" style="width:100%;padding:12px;border:1px solid #ccc;border-radius:12px;font-size:1em;box-sizing:border-box;margin-bottom:10px;font-family:inherit;" dir="ltr">
-      <button onclick="submitRedeemCode()" style="width:100%;padding:12px;border:none;border-radius:12px;background:#111;color:#fff;font-size:1em;font-weight:700;cursor:pointer;font-family:inherit;">✅ تفعيل</button>
+      <input id="redeemCodeInput" type="text" placeholder="XXXX-XXXX-XXXX" class="ui-input" style="margin-bottom:10px;" dir="ltr">
+      <button onclick="submitRedeemCode()" class="ui-btn ui-btn--solid">✅ تفعيل</button>
     </div>
 
     <div id="redeemCourseStep" style="display:none;">
-      <p style="margin:0 0 8px;font-weight:700;color:#b06000;">🎓 هذا الكود عام — اختر الكورس الذي تريد فتحه:</p>
-      <select id="redeemCourseSelect" style="width:100%;padding:12px;border:1px solid #ccc;border-radius:12px;font-size:1em;box-sizing:border-box;margin-bottom:10px;font-family:inherit;">
+      <p class="ui-note--warning" style="margin:0 0 8px;">🎓 هذا الكود عام — اختر الكورس الذي تريد فتحه:</p>
+      <select id="redeemCourseSelect" class="ui-select" style="margin-bottom:10px;">
         <option value="">-- اختر الكورس --</option>
       </select>
-      <button onclick="submitRedeemWithCourse()" style="width:100%;padding:12px;border:none;border-radius:12px;background:#1a7a2a;color:#fff;font-size:1em;font-weight:700;cursor:pointer;font-family:inherit;">✅ تفعيل الكورس</button>
+      <button onclick="submitRedeemWithCourse()" class="ui-btn ui-btn--success">✅ تفعيل الكورس</button>
     </div>
   </div>
 </div>
@@ -1516,13 +1516,12 @@ if ($cssVer === '' || $cssVer === '0') $cssVer = (string)time();
   function showMsg(text, ok) {
     msgBox.textContent = text;
     msgBox.style.display = 'block';
-    msgBox.style.background = ok ? '#e9ffe9' : '#ffe9e9';
-    msgBox.style.border = '1px solid ' + (ok ? '#8ad08a' : '#d08a8a');
-    msgBox.style.color = ok ? '#1a6a1a' : '#a00';
+    msgBox.className = ok ? 'ui-msg--success' : 'ui-msg--error';
   }
   function hideMsg() {
     msgBox.style.display = 'none';
     msgBox.textContent = '';
+    msgBox.className = '';
   }
   function showStep(step) {
     codeStep.style.display = step === 'code' ? 'block' : 'none';

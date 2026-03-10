@@ -57,15 +57,15 @@
   border-radius: 16px;
   font-weight: 1000;
   text-decoration: none;
-  background: #8e1d28;
+  background: var(--primary);
   color:#fff;
-  border: 2px solid #8e1d28;
+  border: 2px solid var(--primary);
   transition: .2s ease;
   min-width: 220px;
 }
 .hero__btn:hover{
   background: transparent;
-  color: #8e1d28;
+  color: var(--primary);
 }
 
 .hero__media{

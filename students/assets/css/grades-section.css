@@ -43,7 +43,7 @@
   display:block;
   position: relative;
   overflow:hidden;
-  background: #eee;
+  background: rgba(0,0,0,.06);
   text-decoration:none;
   outline: none;
   cursor: pointer;
@@ -51,7 +51,7 @@
 }
 
 html[data-theme="dark"] .grade-cardx__mediaLink{
-  background: #0b1116;
+  background: rgba(255,255,255,.04);
 }
 
 /* ✅ show full image (no crop) */
@@ -129,12 +129,12 @@ html[data-theme="dark"] .grade-cardx__mediaLink{
   padding: 10px 14px;
   border-radius: 12px;
 
-  background: #0b7b7a;
+  background: var(--primary);
   color:#fff;
   text-decoration:none;
   font-weight: 1000;
 
-  border: 2px solid #0b7b7a;
+  border: 2px solid var(--primary);
   transition: .2s ease;
   white-space:nowrap;
   outline: none;
@@ -142,7 +142,7 @@ html[data-theme="dark"] .grade-cardx__mediaLink{
 
 .grade-cardx__btn:hover{
   background: transparent;
-  color:#0b7b7a;
+  color:var(--primary);
 }
 
 .grade-cardx__btn:focus{

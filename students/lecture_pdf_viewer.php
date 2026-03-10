@@ -80,7 +80,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   <link rel="stylesheet" href="assets/css/account-lecture.css?v=<?php echo h($lecCssVer); ?>">
 
   <style>
-    .pill{padding:10px 12px;border:1px solid #ddd;border-radius:14px;font-weight:900}
+    .pill{padding:10px 12px;border:1px solid var(--border);border-radius:14px;font-weight:900}
   </style>
 
   <title>عارض الملف - <?php echo h((string)($pdf['title'] ?? 'PDF')); ?></title>

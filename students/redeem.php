@@ -163,51 +163,64 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;800;900;1000&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/site.css">
   <title>تفعيل كود</title>
   <style>
-    body{font-family:Tahoma, Arial; padding:18px; max-width:680px; margin:auto; line-height:1.8}
-    .box{padding:12px;border:1px solid #ddd;border-radius:10px;margin:12px 0}
-    .ok{background:#e9ffe9;border-color:#8ad08a}
-    .bad{background:#ffe9e9;border-color:#d08a8a}
-    input{padding:10px;border:1px solid #ccc;border-radius:10px;width:100%;box-sizing:border-box}
-    button{padding:10px 14px;border:0;border-radius:10px;background:#111;color:#fff;font-weight:700;cursor:pointer;margin-top:10px}
-    a{color:#0b63ce;text-decoration:none;font-weight:700}
+    body{padding:18px 0 40px;line-height:1.8}
+    .redeem-shell{max-width:680px;margin:0 auto;padding:0 16px}
+    .redeem-card{padding:18px}
+    .box{padding:12px;border:1px solid var(--border);border-radius:12px;margin:12px 0;background:var(--card-bg);color:var(--text)}
+    .ok{background:var(--success-soft-bg);border-color:var(--success-soft-border);color:var(--success)}
+    .bad{background:var(--danger-soft-bg);border-color:var(--danger-soft-border);color:var(--danger)}
+    .warn{background:var(--warning-soft-bg);border-color:var(--warning-soft-border);color:var(--warning)}
+    .box label{display:block;margin-bottom:8px;font-weight:900}
+    .box a{color:var(--primary);text-decoration:none;font-weight:700}
+    .box a:hover{text-decoration:underline;text-underline-offset:4px}
   </style>
 </head>
 <body>
-  <h2>تفعيل كود</h2>
+  <div class="redeem-shell">
+    <section class="card redeem-card">
+      <h2 class="h1">تفعيل كود</h2>
+      <p class="muted">يمكنك إدخال كود الاشتراك هنا وسيتم تطبيق الألوان المناسبة حسب الثيم الحالي.</p>
 
-  <?php if ($msg): ?><div class="box ok"><?php echo h($msg); ?></div><?php endif; ?>
-  <?php if ($err): ?><div class="box bad"><?php echo h($err); ?></div><?php endif; ?>
+      <?php if ($msg): ?><div class="box ok"><?php echo h($msg); ?></div><?php endif; ?>
+      <?php if ($err): ?><div class="box bad"><?php echo h($err); ?></div><?php endif; ?>
 
-  <?php if ($needsCourseSelect && !empty($coursesList)): ?>
-    <div class="box" style="background:#fff8e1;border-color:#f0c040;">
-      <p>🎓 هذا الكود عام — اختر الكورس الذي تريد فتحه:</p>
-      <form method="post" class="box" style="margin:0">
-        <input type="hidden" name="code" value="<?php echo h((string)($_POST['code'] ?? '')); ?>">
-        <select name="target_course_id" required style="padding:10px;border:1px solid #ccc;border-radius:10px;width:100%;margin-bottom:8px;font-size:1em;">
-          <option value="">-- اختر الكورس --</option>
-          <?php foreach ($coursesList as $cv): ?>
-            <option value="<?php echo (int)$cv['id']; ?>"><?php echo h((string)$cv['name']); ?></option>
-          <?php endforeach; ?>
-        </select>
-        <button type="submit">✅ تفعيل الكورس</button>
-      </form>
-    </div>
-  <?php elseif (!$msg): ?>
-    <form method="post" class="box">
-      <label>أدخل كود الاشتراك:</label>
-      <input name="code" required placeholder="مثال: XXXX-XXXX-XXXX" value="<?php echo h((string)($_POST['code'] ?? '')); ?>">
-      <button type="submit">تفعيل</button>
-    </form>
-  <?php else: ?>
-    <form method="post" class="box">
-      <label>تفعيل كود آخر:</label>
-      <input name="code" required placeholder="مثال: XXXX-XXXX-XXXX">
-      <button type="submit">تفعيل</button>
-    </form>
-  <?php endif; ?>
+      <?php if ($needsCourseSelect && !empty($coursesList)): ?>
+        <div class="box warn">
+          <p style="margin-top:0;">🎓 هذا الكود عام — اختر الكورس الذي تريد فتحه:</p>
+          <form method="post" class="box" style="margin:0;">
+            <input type="hidden" name="code" value="<?php echo h((string)($_POST['code'] ?? '')); ?>">
+            <select name="target_course_id" required class="ui-select" style="margin-bottom:8px;">
+              <option value="">-- اختر الكورس --</option>
+              <?php foreach ($coursesList as $cv): ?>
+                <option value="<?php echo (int)$cv['id']; ?>"><?php echo h((string)$cv['name']); ?></option>
+              <?php endforeach; ?>
+            </select>
+            <button type="submit" class="ui-btn ui-btn--success">✅ تفعيل الكورس</button>
+          </form>
+        </div>
+      <?php elseif (!$msg): ?>
+        <form method="post" class="box">
+          <label>أدخل كود الاشتراك:</label>
+          <input name="code" required placeholder="مثال: XXXX-XXXX-XXXX" value="<?php echo h((string)($_POST['code'] ?? '')); ?>" class="ui-input" dir="ltr">
+          <button type="submit" class="ui-btn ui-btn--solid" style="margin-top:10px;">تفعيل</button>
+        </form>
+      <?php else: ?>
+        <form method="post" class="box">
+          <label>تفعيل كود آخر:</label>
+          <input name="code" required placeholder="مثال: XXXX-XXXX-XXXX" class="ui-input" dir="ltr">
+          <button type="submit" class="ui-btn ui-btn--solid" style="margin-top:10px;">تفعيل</button>
+        </form>
+      <?php endif; ?>
 
-  <p><a href="account.php">⬅️ رجوع للحساب</a></p>
+      <p style="margin-bottom:0;"><a href="account.php">⬅️ رجوع للحساب</a></p>
+    </section>
+  </div>
+  <script src="assets/js/theme.js"></script>
 </body>
 </html>

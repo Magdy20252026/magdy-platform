@@ -237,9 +237,9 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   <style>
     .buy-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
     .buy-row form{display:inline}
-    .pill{padding:10px 12px;border:1px solid #ddd;border-radius:14px;font-weight:900}
+    .pill{padding:10px 12px;border:1px solid var(--border);border-radius:14px;font-weight:900}
     .acc-modal-btn{display:inline-flex;align-items:center;gap:6px;padding:10px 14px;border:2px solid transparent;border-radius:12px;font-weight:700;cursor:pointer;font-family:inherit;font-size:1em}
-    .acc-modal-btn--primary{background:#111;color:#fff}
+    .acc-modal-btn--primary{background:var(--btn-solid-bg);color:var(--btn-solid-text)}
     .acc-modal-btn--ghost{background:var(--page-bg);border-color:var(--border);color:var(--text)}
   </style>
 
@@ -297,9 +297,9 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
         <div class="acc-lectureInfo__row">
           الحالة:
           <?php if ($isLectureOpen): ?>
-            <b style="color:green;">✅ مفتوح</b>
+            <b class="ui-status--success">✅ مفتوح</b>
           <?php else: ?>
-            <b style="color:#b00;">🔒 مقفول</b>
+            <b class="ui-status--danger">🔒 مقفول</b>
           <?php endif; ?>
         </div>
 
@@ -518,7 +518,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
 
 <!-- ✅ Purchase / Code Modals (same as account_course.php) -->
 <div id="accModalBackdrop" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.55);align-items:center;justify-content:center;" role="dialog" aria-modal="true">
-  <div id="accModalBox" style="background:var(--card-bg,#fff);border-radius:18px;padding:28px 24px;max-width:420px;width:calc(100% - 32px);box-shadow:0 8px 40px rgba(0,0,0,.25);position:relative;font-family:inherit;">
+  <div id="accModalBox" style="background:var(--card-bg,#fff);color:var(--text,#111);border-radius:18px;padding:28px 24px;max-width:420px;width:calc(100% - 32px);box-shadow:0 8px 40px rgba(0,0,0,.25);position:relative;font-family:inherit;">
     <button id="accModalClose" style="position:absolute;top:12px;left:12px;background:none;border:none;font-size:1.4em;cursor:pointer;color:var(--muted,#888);" aria-label="إغلاق">✖</button>
     <h3 id="accModalTitle" style="margin:0 0 14px;font-size:1.2em;"></h3>
     <div id="accModalMsg" style="display:none;padding:10px 14px;border-radius:10px;margin-bottom:12px;font-weight:700;"></div>
@@ -538,15 +538,14 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
     titleEl.textContent = title;
     bodyEl.innerHTML = bodyHtml;
     msgEl.style.display = 'none';
+    msgEl.className = '';
     backdrop.style.display = 'flex';
   }
   function closeModal() { backdrop.style.display = 'none'; }
   function showMsg(text, ok) {
     msgEl.textContent = text;
     msgEl.style.display = 'block';
-    msgEl.style.background = ok ? '#e9ffe9' : '#ffe9e9';
-    msgEl.style.border = '1px solid ' + (ok ? '#8ad08a' : '#d08a8a');
-    msgEl.style.color = ok ? '#1a6a1a' : '#a00';
+    msgEl.className = ok ? 'ui-msg--success' : 'ui-msg--error';
   }
   function setLoading(btn, loading) {
     btn.disabled = loading;
@@ -570,8 +569,8 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
     _redeemContextId = parseInt(contextId) || 0;
     _redeemLastCode = '';
     openModal('🎫 تفعيل كود اشتراك',
-      '<input id="rCodeIn" type="text" placeholder="XXXX-XXXX-XXXX" dir="ltr" style="width:100%;padding:12px;border:1px solid #ccc;border-radius:12px;font-size:1em;box-sizing:border-box;margin-bottom:10px;font-family:inherit;">' +
-      '<button id="rCodeBtn" onclick="doRedeemCode()" style="width:100%;padding:12px;border:none;border-radius:12px;background:#111;color:#fff;font-size:1em;font-weight:700;cursor:pointer;font-family:inherit;">✅ تفعيل</button>'
+      '<input id="rCodeIn" type="text" placeholder="XXXX-XXXX-XXXX" dir="ltr" class="ui-input" style="margin-bottom:10px;">' +
+      '<button id="rCodeBtn" onclick="doRedeemCode()" class="ui-btn ui-btn--solid">✅ تفعيل</button>'
     );
     setTimeout(function(){ var i=document.getElementById('rCodeIn'); if(i) i.focus(); }, 80);
   };
@@ -595,9 +594,9 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
         var opts = '<option value="">-- اختر الكورس --</option>';
         (data.courses || []).forEach(function(c){ opts += '<option value="' + c.id + '">' + c.name + '</option>'; });
         bodyEl.innerHTML =
-          '<p style="margin:0 0 8px;font-weight:700;color:#b06000;">🎓 هذا الكود عام — اختر الكورس:</p>' +
-          '<select id="rCourseIn" style="width:100%;padding:12px;border:1px solid #ccc;border-radius:12px;font-size:1em;box-sizing:border-box;margin-bottom:10px;font-family:inherit;">' + opts + '</select>' +
-          '<button id="rCourseBtn" onclick="doRedeemWithCourse()" style="width:100%;padding:12px;border:none;border-radius:12px;background:#1a7a2a;color:#fff;font-size:1em;font-weight:700;cursor:pointer;font-family:inherit;">✅ تفعيل</button>';
+          '<p class="ui-note--warning" style="margin:0 0 8px;">🎓 هذا الكود عام — اختر الكورس:</p>' +
+          '<select id="rCourseIn" class="ui-select" style="margin-bottom:10px;">' + opts + '</select>' +
+          '<button id="rCourseBtn" onclick="doRedeemWithCourse()" class="ui-btn ui-btn--success">✅ تفعيل</button>';
         showMsg(data.message || 'اختر الكورس.', false);
       } else if (data.ok) {
         showMsg('✅ ' + (data.message||'تم التفعيل بنجاح.'), true);
@@ -629,7 +628,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
     openModal('🛒 شراء المحاضرة بالمحفظة',
       '<p style="margin:0 0 10px;font-weight:700;">💰 السعر: <b>' + priceText + '</b></p>' +
       '<p style="margin:0 0 14px;color:var(--muted,#666);font-size:.95em;">سيتم خصم المبلغ من رصيد محفظتك.</p>' +
-      '<button id="buyLectureBtn" onclick="doBuyLecture(' + parseInt(lectureId) + ')" style="width:100%;padding:12px;border:none;border-radius:12px;background:#111;color:#fff;font-size:1em;font-weight:700;cursor:pointer;font-family:inherit;">✅ تأكيد الشراء</button>'
+      '<button id="buyLectureBtn" onclick="doBuyLecture(' + parseInt(lectureId) + ')" class="ui-btn ui-btn--solid">✅ تأكيد الشراء</button>'
     );
   };
 
