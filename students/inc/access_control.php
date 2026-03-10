@@ -256,18 +256,21 @@ function student_get_video_requirement_status(PDO $pdo, int $studentId, ?array $
   $cfg = student_assessment_type_config($assessmentType);
   $attempt = student_assessment_fetch_latest_attempt($pdo, $assessmentType, $assessmentId, $studentId);
   $attemptStatus = (string)($attempt['status'] ?? '');
+  $completion = student_assessment_attempt_answer_summary($pdo, $assessmentType, (int)($attempt['id'] ?? 0));
   $assessmentName = student_linked_assessment_name($pdo, $assessmentType, $assessmentId);
   if ($assessmentName === '') $assessmentName = (string)($cfg['label'] ?? 'المحتوى');
 
   return [
     'required' => true,
-    'satisfied' => ($attemptStatus === 'submitted'),
+    'satisfied' => student_assessment_attempt_is_completed($pdo, $assessmentType, $attempt),
     'assessment_type' => $assessmentType,
     'assessment_id' => $assessmentId,
     'assessment_label' => (string)($cfg['label'] ?? 'المحتوى'),
     'assessment_name' => $assessmentName,
     'assessment_href' => 'assessment.php?type=' . rawurlencode($assessmentType) . '&id=' . $assessmentId,
     'attempt_status' => $attemptStatus,
+    'answered_questions' => (int)($completion['answered_count'] ?? 0),
+    'total_questions' => (int)($completion['question_count'] ?? 0),
   ];
 }
 

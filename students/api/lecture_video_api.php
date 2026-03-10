@@ -49,7 +49,7 @@ if ($action === 'start') {
   if (!empty($videoRequirement['required']) && empty($videoRequirement['satisfied'])) {
     lecture_video_api_response([
       'ok' => false,
-      'message' => 'يجب تسليم ' . (string)($videoRequirement['assessment_name'] ?? 'المحتوى المرتبط') . ' أولًا قبل تشغيل الفيديو.',
+      'message' => 'يجب حل وتسليم ' . (string)($videoRequirement['assessment_name'] ?? 'المحتوى المرتبط') . ' أولًا قبل تشغيل الفيديو.',
       'stats' => $stats,
       'requirement' => $videoRequirement,
     ]);
