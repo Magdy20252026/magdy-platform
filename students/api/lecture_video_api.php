@@ -18,6 +18,8 @@ function lecture_video_api_response(array $payload): void {
   exit;
 }
 
+const LECTURE_VIDEO_MAX_HEARTBEAT_DELTA_SECONDS = 20; // cap to nearby heartbeat windows to avoid inflating watch time
+
 if ($studentId <= 0 || $videoId <= 0 || !in_array($action, ['start', 'heartbeat', 'complete'], true)) {
   lecture_video_api_response(['ok' => false, 'message' => 'طلب غير صالح.']);
 }
@@ -150,7 +152,7 @@ if ($lastPingAt < $startedAt) $lastPingAt = $startedAt;
 
 $watchedSeconds = max(0, (int)($watch['watched_seconds'] ?? 0));
 $delta = max(0, $now - $lastPingAt);
-if ($delta > 20) $delta = 20;
+if ($delta > LECTURE_VIDEO_MAX_HEARTBEAT_DELTA_SECONDS) $delta = LECTURE_VIDEO_MAX_HEARTBEAT_DELTA_SECONDS;
 if ($delta > 0) {
   $watchedSeconds += $delta;
 }

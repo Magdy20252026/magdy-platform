@@ -233,6 +233,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   var progressBaseStartedAt = 0;
   var requestInFlight = false;
   var protectedPageClosed = false;
+  var devtoolsDetectionStrikes = 0;
 
   function updateNotice(text, isError) {
     if (!noticeEl) return;
@@ -458,10 +459,19 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
     protectedPageClosed = true;
     stopProgressTimers();
     updateNotice(reason, true);
-    document.body.innerHTML = '';
-    try { window.open('', '_self'); } catch (e) {}
-    try { window.close(); } catch (e) {}
-    window.location.replace('about:blank');
+    renderPlaceholder(reason);
+    if (startBtn) startBtn.disabled = true;
+    if (fullscreenBtn) fullscreenBtn.disabled = true;
+
+    if (document.fullscreenElement && document.exitFullscreen) {
+      document.exitFullscreen().catch(function(){});
+    }
+
+    window.setTimeout(function(){
+      try { window.open('', '_self'); } catch (e) {}
+      try { window.close(); } catch (e) {}
+      window.location.replace('about:blank');
+    }, 150);
   }
 
   if (startBtn) {
@@ -515,10 +525,24 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
 
   window.setInterval(function(){
     if (protectedPageClosed) return;
+    if (document.hidden || !document.hasFocus()) {
+      devtoolsDetectionStrikes = 0;
+      return;
+    }
+
+    var widthGap = Math.abs(window.outerWidth - window.innerWidth);
+    var heightGap = Math.abs(window.outerHeight - window.innerHeight);
     var devtoolsOpen =
-      Math.abs(window.outerWidth - window.innerWidth) > 160 ||
-      Math.abs(window.outerHeight - window.innerHeight) > 160;
+      widthGap > 220 ||
+      heightGap > 180;
+
     if (devtoolsOpen) {
+      devtoolsDetectionStrikes++;
+    } else {
+      devtoolsDetectionStrikes = 0;
+    }
+
+    if (devtoolsDetectionStrikes >= 3) {
       closeProtectedPage('⛔ تم اكتشاف فتح أدوات المطور، وتم إغلاق الصفحة لحماية الفيديو.');
     }
   }, 1200);
