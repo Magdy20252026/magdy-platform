@@ -187,7 +187,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
             <button class="acc-modal-btn acc-modal-btn--primary acc-platformControls__iconBtn" type="button" id="lecturePlayerCtrlPlayPause" aria-label="تشغيل أو إيقاف الفيديو" disabled>▶️ تشغيل</button>
             <button class="acc-modal-btn acc-modal-btn--ghost acc-platformControls__iconBtn" type="button" id="lecturePlayerCtrlSeekBack" aria-label="إرجاع عشر ثواني" disabled>⏪ رجوع 10 ث</button>
             <button class="acc-modal-btn acc-modal-btn--ghost acc-platformControls__iconBtn" type="button" id="lecturePlayerCtrlSeekForward" aria-label="تقديم عشر ثواني" disabled>⏩ تقديم 10 ث</button>
-            <button class="acc-modal-btn acc-modal-btn--ghost acc-platformControls__iconBtn" type="button" id="lecturePlayerCtrlFullscreen" aria-label="تكبير المشغل" disabled>🖥️ تكبير</button>
+            <button class="acc-modal-btn acc-modal-btn--ghost acc-platformControls__iconBtn" type="button" id="lecturePlayerCtrlFullscreen" aria-label="تكبير المشغل" disabled>⛶ تكبير</button>
           </div>
           <div class="acc-platformControls__group acc-platformControls__group--timeline">
             <span class="acc-platformControls__label">⏱️ الوقت</span>
@@ -293,8 +293,10 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   const immersiveControlsAutoHideDelayMs = 1800;
   const immersiveControlsWakeThrottleMs = 180;
   const youtubeStatePlaying = 1;
-  const captureShieldDurationMs = 2200;
+  const captureShieldDurationMs = 5200;
+  const captureShieldMinHoldMs = 3200;
   var captureShieldHandle = 0;
+  var captureShieldVisibleUntil = 0;
 
   function ensureValidHalfSeconds(nextValue) {
     return Math.max(5, parseInt(nextValue || videoState.halfSeconds || fallbackHalfSeconds, 10));
@@ -372,11 +374,12 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
 
   function setPlayPauseLabel(isPlaying) {
     if (!ctrlPlayPauseBtn) return;
-    ctrlPlayPauseBtn.textContent = isPlaying ? '⏸️ إيقاف' : '▶️ تشغيل';
+    ctrlPlayPauseBtn.textContent = isPlaying ? '⏸️ إيقاف مؤقت' : '▶️ تشغيل';
   }
 
-  function hideCaptureShield() {
+  function hideCaptureShield(force) {
     if (!captureShield) return;
+    if (!force && Date.now() < captureShieldVisibleUntil) return;
     captureShield.classList.remove('acc-captureShield--active');
   }
 
@@ -387,6 +390,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
       captureShieldHandle = 0;
     }
     if (reason) captureShield.textContent = reason;
+    captureShieldVisibleUntil = Date.now() + captureShieldMinHoldMs;
     captureShield.classList.add('acc-captureShield--active');
     playerStage.classList.add('acc-playerStage--captureBlocked');
     if (youtubePlayer) {
@@ -790,7 +794,8 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
     if (ctrlFullscreenBtn) ctrlFullscreenBtn.addEventListener('click', toggleFullscreen);
 
     document.addEventListener('fullscreenchange', function(){
-      fullscreenBtn.textContent = document.fullscreenElement ? '🡼 إغلاق التكبير' : '🖥️ تكبير';
+      fullscreenBtn.textContent = document.fullscreenElement ? '🡼 إنهاء التكبير' : '⛶ تكبير';
+      if (ctrlFullscreenBtn) ctrlFullscreenBtn.textContent = fullscreenBtn.textContent;
       toggleImmersiveControlsVisibility(true);
     });
   }
@@ -969,6 +974,14 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
       sendProgress('heartbeat');
       return;
     }
+    hideCaptureShield();
+  });
+
+  window.addEventListener('blur', function(){
+    triggerCaptureShield('⚫️ تم تعتيم المشغل تلقائيًا لحماية المحتوى عند محاولة تصوير الشاشة.');
+  });
+
+  window.addEventListener('focus', function(){
     hideCaptureShield();
   });
 
