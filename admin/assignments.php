@@ -307,6 +307,110 @@ if (($_GET['action'] ?? '') === 'preview_json') {
   exit;
 }
 
+function assignment_result_status_label(string $status): string {
+  if ($status === 'submitted') return 'تم الحل';
+  if ($status === 'expired') return 'انتهى الوقت';
+  if ($status === 'in_progress') return 'جاري الحل';
+  return 'لم يبدأ';
+}
+
+function assignment_fetch_result_rows(PDO $pdo, int $assignmentId): array {
+  $stmt = $pdo->prepare("
+    SELECT a.id, a.name, a.grade_id, g.name AS grade_name
+    FROM assignments a
+    INNER JOIN grades g ON g.id = a.grade_id
+    WHERE a.id = ?
+    LIMIT 1
+  ");
+  $stmt->execute([$assignmentId]);
+  $assignment = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+  if (!$assignment) return ['assignment' => null, 'rows' => [], 'solved' => [], 'unsolved' => []];
+
+  $stmt = $pdo->prepare("
+    SELECT s.id, s.full_name, s.student_phone, s.barcode,
+           att.status AS attempt_status, att.score, att.max_score, att.started_at, att.submitted_at
+    FROM students s
+    LEFT JOIN (
+      SELECT aa.*
+      FROM assignment_attempts aa
+      INNER JOIN (
+        SELECT student_id, MAX(id) AS max_id
+        FROM assignment_attempts
+        WHERE assignment_id = ?
+        GROUP BY student_id
+      ) latest ON latest.max_id = aa.id
+    ) att ON att.student_id = s.id
+    WHERE s.grade_id = ? AND s.is_active = 1
+    ORDER BY s.full_name ASC
+  ");
+  $stmt->execute([$assignmentId, (int)$assignment['grade_id']]);
+  $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+  $solved = [];
+  $unsolved = [];
+  foreach ($rows as &$row) {
+    $status = (string)($row['attempt_status'] ?? '');
+    $row['status_label'] = assignment_result_status_label($status);
+    $row['score_text'] = ($status === 'submitted' || $status === 'expired')
+      ? ((float)($row['score'] ?? 0) . ' / ' . (float)($row['max_score'] ?? 0))
+      : '—';
+    if (in_array($status, ['submitted', 'expired'], true)) $solved[] = $row;
+    else $unsolved[] = $row;
+  }
+  unset($row);
+
+  return ['assignment' => $assignment, 'rows' => $rows, 'solved' => $solved, 'unsolved' => $unsolved];
+}
+
+function assignment_export_result_rows(string $filename, string $title, array $rows): void {
+  header("Content-Type: application/vnd.ms-excel; charset=utf-8");
+  header("Content-Disposition: attachment; filename=\"" . $filename . "\"");
+  header("Pragma: no-cache");
+  header("Expires: 0");
+  echo "\xEF\xBB\xBF";
+  ?>
+  <!doctype html>
+  <html lang="ar" dir="rtl">
+  <head>
+    <meta charset="utf-8">
+    <title><?php echo h($title); ?></title>
+    <style>table{border-collapse:collapse;width:100%}th,td{border:1px solid #ccc;padding:8px;font-family:Tahoma,Arial}th{background:#f2f2f2}</style>
+  </head>
+  <body>
+    <table>
+      <thead>
+        <tr>
+          <th>م</th>
+          <th>اسم الطالب</th>
+          <th>الهاتف</th>
+          <th>الباركود</th>
+          <th>الحالة</th>
+          <th>الدرجة</th>
+          <th>تاريخ البدء</th>
+          <th>تاريخ التسليم</th>
+        </tr>
+      </thead>
+      <tbody>
+        <?php foreach ($rows as $i => $row): ?>
+          <tr>
+            <td><?php echo (int)$i + 1; ?></td>
+            <td><?php echo h((string)$row['full_name']); ?></td>
+            <td><?php echo h((string)($row['student_phone'] ?? '')); ?></td>
+            <td><?php echo h((string)($row['barcode'] ?? '')); ?></td>
+            <td><?php echo h((string)$row['status_label']); ?></td>
+            <td><?php echo h((string)$row['score_text']); ?></td>
+            <td><?php echo h((string)($row['started_at'] ?? '')); ?></td>
+            <td><?php echo h((string)($row['submitted_at'] ?? '')); ?></td>
+          </tr>
+        <?php endforeach; ?>
+      </tbody>
+    </table>
+  </body>
+  </html>
+  <?php
+  exit;
+}
+
 /* =========================
    Fetch assignments list
    ========================= */
@@ -330,6 +434,22 @@ if ($editId > 0) {
   $stmt = $pdo->prepare("SELECT * FROM assignments WHERE id=? LIMIT 1");
   $stmt->execute([$editId]);
   $editRow = $stmt->fetch() ?: null;
+}
+
+$resultsAssignmentId = (int)($_GET['results_assignment'] ?? 0);
+$resultsView = (string)($_GET['results_view'] ?? 'solved');
+if (!in_array($resultsView, ['solved', 'unsolved'], true)) $resultsView = 'solved';
+$resultsPayload = ['assignment' => null, 'rows' => [], 'solved' => [], 'unsolved' => []];
+if ($resultsAssignmentId > 0) {
+  $resultsPayload = assignment_fetch_result_rows($pdo, $resultsAssignmentId);
+  if (!empty($_GET['export_results']) && !empty($resultsPayload['assignment'])) {
+    $exportType = (string)$_GET['export_results'];
+    if (in_array($exportType, ['solved', 'unsolved'], true)) {
+      $rows = $exportType === 'solved' ? $resultsPayload['solved'] : $resultsPayload['unsolved'];
+      $filename = ($exportType === 'solved' ? 'طلاب_قاموا_بحل_الواجب_' : 'طلاب_لم_يحلوا_الواجب_') . date('Y-m-d_H-i') . '.xls';
+      assignment_export_result_rows($filename, 'نتائج الواجب', $rows);
+    }
+  }
 }
 
 /* Sidebar menu */
@@ -372,8 +492,9 @@ $menu = [
   // ✅✅✅ التعديل المطلوب هنا: اجعل الرابط يذهب لصفحة student-notifications.php بدل #
   ['key' => 'student_notifications', 'label' => 'اشعارات الطلاب', 'icon' => '🔔', 'href' => 'student-notifications.php'],
 
-  ['key' => 'facebook', 'label' => 'فيس بوك المنصة', 'icon' => '📘', 'href' => '#facebook'],
-  ['key' => 'chat', 'label' => 'شات الطلاب', 'icon' => '💬', 'href' => '#chat'],
+  ['key' => 'attendance', 'label' => 'حضور الطلاب', 'icon' => '🧾', 'href' => 'attendance.php'],
+  ['key' => 'facebook', 'label' => 'فيس بوك المنصة', 'icon' => '📘', 'href' => 'platform-posts.php'],
+  ['key' => 'chat', 'label' => 'شات الطلاب', 'icon' => '💬', 'href' => 'student-chat.php'],
 
   // ✅✅✅ التعديل المطلوب: زر الإعدادات يفتح صفحة settings.php بدل #settings
   ['key' => 'settings', 'label' => 'الإعدادات', 'icon' => '⚙️', 'href' => 'settings.php'],
@@ -611,6 +732,8 @@ if ($adminRole !== 'مدير') {
                   <td data-label="إجراءات" class="actions">
                     <button class="link info js-preview" type="button" data-aid="<?php echo (int)$a['id']; ?>">👁️ معاينة</button>
                     <a class="link" href="assignments.php?edit=<?php echo (int)$a['id']; ?>">✏️ تعديل</a>
+                    <a class="link info" href="assignments.php?results_assignment=<?php echo (int)$a['id']; ?>&results_view=solved">📊 طلاب قاموا بالحل</a>
+                    <a class="link info" href="assignments.php?results_assignment=<?php echo (int)$a['id']; ?>&results_view=unsolved">📭 طلاب لم يقوموا بالحل</a>
 
                     <form method="post" class="inline" onsubmit="return confirm('هل أنت متأكد من حذف هذا الواجب؟');">
                       <input type="hidden" name="action" value="delete_assignment">
@@ -625,6 +748,61 @@ if ($adminRole !== 'مدير') {
           </table>
         </div>
       </section>
+
+      <?php if (!empty($resultsPayload['assignment'])): ?>
+        <?php
+          $assignmentInfo = $resultsPayload['assignment'];
+          $resultRows = ($resultsView === 'solved') ? $resultsPayload['solved'] : $resultsPayload['unsolved'];
+          $resultTitle = ($resultsView === 'solved') ? 'طلاب قاموا بالحل' : 'طلاب لم يقوموا بالحل';
+        ?>
+        <section class="cardx" style="margin-top:12px;">
+          <div class="cardx-head">
+            <div class="cardx-title">
+              <span class="cardx-badge">📊</span>
+              <h2><?php echo h($resultTitle); ?> — <?php echo h((string)$assignmentInfo['name']); ?></h2>
+            </div>
+            <div class="cardx-actions">
+              <span class="pillx">🏫 <?php echo h((string)$assignmentInfo['grade_name']); ?></span>
+              <a class="btn ghost" href="assignments.php?results_assignment=<?php echo (int)$resultsAssignmentId; ?>&results_view=solved&export_results=solved">⬇️ Excel طلاب قاموا بالحل</a>
+              <a class="btn ghost" href="assignments.php?results_assignment=<?php echo (int)$resultsAssignmentId; ?>&results_view=unsolved&export_results=unsolved">⬇️ Excel طلاب لم يقوموا بالحل</a>
+            </div>
+          </div>
+
+          <div class="table-wrap scroll-pro">
+            <table class="table as-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>اسم الطالب</th>
+                  <th>الهاتف</th>
+                  <th>الباركود</th>
+                  <th>الحالة</th>
+                  <th>الدرجة</th>
+                  <th>تاريخ البدء</th>
+                  <th>تاريخ التسليم</th>
+                </tr>
+              </thead>
+              <tbody>
+                <?php if (!$resultRows): ?>
+                  <tr><td colspan="8" style="text-align:center">لا يوجد طلاب ضمن هذه القائمة حالياً.</td></tr>
+                <?php endif; ?>
+                <?php foreach ($resultRows as $idx => $row): ?>
+                  <tr>
+                    <td><?php echo (int)$idx + 1; ?></td>
+                    <td><?php echo h((string)$row['full_name']); ?></td>
+                    <td><?php echo h((string)($row['student_phone'] ?? '')); ?></td>
+                    <td><?php echo h((string)($row['barcode'] ?? '')); ?></td>
+                    <td><?php echo h((string)$row['status_label']); ?></td>
+                    <td><?php echo h((string)$row['score_text']); ?></td>
+                    <td><?php echo h((string)($row['started_at'] ?? '')); ?></td>
+                    <td><?php echo h((string)($row['submitted_at'] ?? '')); ?></td>
+                  </tr>
+                <?php endforeach; ?>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      <?php endif; ?>
 
       <!-- ✅ Preview modal -->
       <div class="as-modal" id="previewModal" aria-hidden="true">
