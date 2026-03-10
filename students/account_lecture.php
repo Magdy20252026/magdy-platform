@@ -223,8 +223,20 @@ if ($isLectureOpen && !empty($videos)) {
       'half_watch_seconds' => (int)$videoRow['half_watch_seconds'],
       'video_type' => (string)($videoRow['video_type'] ?? ''),
     ];
+
+    if ($selectedVideoId <= 0 && !$videoRow['is_blocked']) {
+      $selectedVideoId = $videoId;
+    }
   }
   unset($videoRow);
+
+  if ($selectedVideoId <= 0 && !empty($videos[0]['id'])) {
+    $selectedVideoId = (int)$videos[0]['id'];
+  }
+}
+
+if ($isLectureOpen && !empty($pdfs[0]['id'])) {
+  $selectedPdfId = (int)$pdfs[0]['id'];
 
 }
 
@@ -595,16 +607,11 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
 <script>
 (function(){
   var videos = <?php echo $videosJson; ?>;
-  if (!videos.length) {
-    document.addEventListener('contextmenu', function(e){ e.preventDefault(); });
-    document.addEventListener('mousedown', function(e){ if (e.button === 2) e.preventDefault(); }, true);
-    return;
-  }
-
   var videoMap = {};
   videos.forEach(function(video){ videoMap[String(video.id)] = video; });
 
   var selectedVideoId = <?php echo (int)$selectedVideoId; ?>;
+  var selectedPdfId = <?php echo (int)$selectedPdfId; ?>;
   var surface = document.getElementById('lecturePlayerSurface');
   var placeholder = document.getElementById('lecturePlayerPlaceholder');
   var titleEl = document.getElementById('lecturePlayerTitle');
@@ -649,6 +656,21 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   function setPdfViewerVisible(isVisible) {
     if (pdfViewer) pdfViewer.hidden = !isVisible;
     if (pdfPlaceholder) pdfPlaceholder.hidden = !!isVisible;
+  }
+
+  function renderPdfSelection() {
+    document.querySelectorAll('[data-pdf-select]').forEach(function(btn){
+      var item = btn.closest('.acc-item');
+      if (item) item.classList.toggle('is-active', String(btn.getAttribute('data-pdf-id')) === String(selectedPdfId));
+    });
+
+    if (!selectedPdfId || !pdfFrame) {
+      setPdfViewerVisible(false);
+      return;
+    }
+
+    setPdfViewerVisible(true);
+    pdfFrame.src = 'lecture_pdf.php?pdf_id=' + selectedPdfId + '#toolbar=0&navpanes=0&scrollbar=0';
   }
 
   function renderSelection() {
@@ -854,13 +876,9 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   document.querySelectorAll('[data-pdf-select]').forEach(function(btn){
     btn.addEventListener('click', function(){
       var nextId = parseInt(btn.getAttribute('data-pdf-id') || '0', 10);
-      if (!nextId || !pdfFrame) return;
-      setPdfViewerVisible(true);
-      document.querySelectorAll('[data-pdf-select]').forEach(function(other){
-        var item = other.closest('.acc-item');
-        if (item) item.classList.toggle('is-active', other === btn);
-      });
-      pdfFrame.src = 'lecture_pdf.php?pdf_id=' + nextId + '#toolbar=0&navpanes=0&scrollbar=0';
+      if (!nextId) return;
+      selectedPdfId = nextId;
+      renderPdfSelection();
     });
   });
 
@@ -906,9 +924,12 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   document.addEventListener('mousedown', function(e){ if (e.button === 2) e.preventDefault(); }, true);
 
   setPlayerStageVisible(false);
-  setPdfViewerVisible(false);
+  renderPdfSelection();
   renderPlaceholder('اختر الفيديو من القائمة ثم اضغط <b>ابدأ المشاهدة</b> ليتم تشغيله داخل بلاير المنصة.');
   renderSelection();
+  if (selectedVideoId && videoMap[String(selectedVideoId)] && !videoMap[String(selectedVideoId)].is_blocked) {
+    startCurrentVideo();
+  }
 })();
 </script>
 

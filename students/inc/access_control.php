@@ -194,7 +194,11 @@ function student_extract_iframe_src(string $iframeHtml): string {
     return html_entity_decode((string)$m[2], ENT_QUOTES, 'UTF-8');
   }
 
-  if (preg_match('~^https?://~i', $iframeHtml)) {
+  if (preg_match('/src\s*=\s*([^\s>]+)/i', $iframeHtml, $m)) {
+    return html_entity_decode(trim((string)$m[1], "\"'"), ENT_QUOTES, 'UTF-8');
+  }
+
+  if (preg_match('~^(https?:)?//~i', $iframeHtml)) {
     return $iframeHtml;
   }
 
@@ -235,6 +239,7 @@ function student_extract_youtube_video_id(string $url): string {
 function student_normalize_video_src(string $src, string $videoType, string $origin = ''): string {
   $src = trim(html_entity_decode($src, ENT_QUOTES, 'UTF-8'));
   if ($src === '') return '';
+  if (strpos($src, '//') === 0) $src = 'https:' . $src;
 
   $parts = @parse_url($src);
   $scheme = strtolower((string)($parts['scheme'] ?? ''));
