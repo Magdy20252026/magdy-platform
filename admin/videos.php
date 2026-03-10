@@ -64,9 +64,8 @@ function encrypt_iframe(string $plain): array {
   $plain = trim($plain);
   if ($plain === '') return ['enc' => null, 'iv' => null];
 
-  $key = videos_secret_key();
-  // openssl يحتاج key بطول 32 bytes لـ AES-256
-  if (strlen($key) !== 32) $key = hash('sha256', $key, true);
+  $secret = videos_secret_key();
+  $key = hash('sha256', $secret, true);
 
   $iv = random_bytes(16);
   $encRaw = openssl_encrypt($plain, 'AES-256-CBC', $key, OPENSSL_RAW_DATA, $iv);
@@ -81,8 +80,7 @@ function encrypt_iframe(string $plain): array {
 function decrypt_iframe(?string $encB64, ?string $ivHex): string {
   if (!$encB64 || !$ivHex) return '';
 
-  $key = videos_secret_key();
-  if (strlen($key) !== 32) $key = hash('sha256', $key, true);
+  $secret = videos_secret_key();
 
   $iv = hex2bin($ivHex);
   if ($iv === false || strlen($iv) !== 16) return '';
@@ -90,8 +88,117 @@ function decrypt_iframe(?string $encB64, ?string $ivHex): string {
   $encRaw = base64_decode($encB64, true);
   if ($encRaw === false) return '';
 
-  $plain = openssl_decrypt($encRaw, 'AES-256-CBC', $key, OPENSSL_RAW_DATA, $iv);
-  return is_string($plain) ? $plain : '';
+  $keys = [hash('sha256', $secret, true)];
+  if (is_string($secret) && strlen($secret) === 32) $keys[] = $secret;
+
+  foreach ($keys as $key) {
+    $plain = openssl_decrypt($encRaw, 'AES-256-CBC', $key, OPENSSL_RAW_DATA, $iv);
+    if (is_string($plain)) return $plain;
+  }
+
+  return '';
+}
+
+function admin_extract_iframe_src(string $iframeHtml): string {
+  $iframeHtml = trim($iframeHtml);
+  if ($iframeHtml === '') return '';
+
+  if (preg_match('/<iframe\b[^>]*\bsrc\s*=\s*([\"\'])(.*?)\1/i', $iframeHtml, $m)) {
+    return html_entity_decode((string)$m[2], ENT_QUOTES, 'UTF-8');
+  }
+
+  if (preg_match('/<iframe\b[^>]*\bsrc\s*=\s*([^\s>]+)/i', $iframeHtml, $m)) {
+    return html_entity_decode(trim((string)$m[1], "\"'"), ENT_QUOTES, 'UTF-8');
+  }
+
+  if (preg_match('~^(https?:)?//~i', $iframeHtml)) {
+    return $iframeHtml;
+  }
+
+  return '';
+}
+
+function admin_append_url_params(string $url, array $params): string {
+  if ($url === '') return '';
+  $sep = (strpos($url, '?') === false) ? '?' : '&';
+  return $url . $sep . http_build_query($params, '', '&', PHP_QUERY_RFC3986);
+}
+
+function admin_extract_youtube_video_id(string $url): string {
+  $parts = @parse_url($url);
+  if (!is_array($parts)) return '';
+
+  $host = strtolower((string)($parts['host'] ?? ''));
+  $path = trim((string)($parts['path'] ?? ''), '/');
+
+  if ($host === 'youtu.be') return preg_replace('~[^A-Za-z0-9_-]~', '', $path);
+
+  if (strpos($host, 'youtube.com') !== false || strpos($host, 'youtube-nocookie.com') !== false) {
+    $segments = $path === '' ? [] : explode('/', $path);
+    if (!empty($segments[0]) && in_array($segments[0], ['embed', 'shorts', 'live'], true) && !empty($segments[1])) {
+      return preg_replace('~[^A-Za-z0-9_-]~', '', (string)$segments[1]);
+    }
+
+    $query = [];
+    parse_str((string)($parts['query'] ?? ''), $query);
+    if (!empty($query['v'])) {
+      return preg_replace('~[^A-Za-z0-9_-]~', '', (string)$query['v']);
+    }
+  }
+
+  return '';
+}
+
+function admin_normalize_video_src(string $src, string $videoType): string {
+  $src = trim(html_entity_decode($src, ENT_QUOTES, 'UTF-8'));
+  if ($src === '') return '';
+  if (strpos($src, '//') === 0) $src = 'https:' . $src;
+
+  $parts = @parse_url($src);
+  $scheme = strtolower((string)($parts['scheme'] ?? ''));
+  if (!in_array($scheme, ['http', 'https'], true)) return '';
+
+  if ($videoType === 'youtube') {
+    $host = strtolower((string)($parts['host'] ?? ''));
+    $path = trim((string)($parts['path'] ?? ''), '/');
+    $segments = $path === '' ? [] : explode('/', $path);
+    if (
+      (strpos($host, 'youtube.com') !== false || strpos($host, 'youtube-nocookie.com') !== false) &&
+      !empty($segments[0]) &&
+      $segments[0] === 'embed'
+    ) {
+      return $src;
+    }
+
+    $videoId = admin_extract_youtube_video_id($src);
+    if ($videoId === '') return '';
+
+    return admin_append_url_params(
+      'https://www.youtube-nocookie.com/embed/' . rawurlencode($videoId),
+      [
+        'rel' => 0,
+        'modestbranding' => 1,
+        'playsinline' => 1,
+        'iv_load_policy' => 3,
+        'fs' => 0,
+      ]
+    );
+  }
+
+  return $src;
+}
+
+function build_admin_video_preview_html(array $videoRow, string $iframeHtml): string {
+  $iframeHtml = trim($iframeHtml);
+  if ($iframeHtml === '') return '';
+
+  $src = admin_extract_iframe_src($iframeHtml);
+  $src = admin_normalize_video_src($src, (string)($videoRow['video_type'] ?? ''));
+  if ($src === '') return $iframeHtml;
+
+  $title = htmlspecialchars((string)($videoRow['title'] ?? 'معاينة الفيديو'), ENT_QUOTES, 'UTF-8');
+  $srcAttr = htmlspecialchars($src, ENT_QUOTES, 'UTF-8');
+  return '<iframe class="acc-embeddedFrame" src="' . $srcAttr . '" title="' . $title . '" loading="lazy" referrerpolicy="strict-origin-when-cross-origin" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen" allowfullscreen></iframe>';
 }
 
 function normalize_int($v, int $min, int $max): int {
@@ -366,6 +473,7 @@ if ($adminRole !== 'مدير') {
 $previewId = (int)($_GET['preview'] ?? 0);
 $preview = null;
 $previewIframe = '';
+$previewHtml = '';
 if ($previewId > 0) {
   $stmt = $pdo->prepare("
     SELECT v.*, c.name AS course_name, l.name AS lecture_name
@@ -378,6 +486,8 @@ if ($previewId > 0) {
   $preview = $stmt->fetch() ?: null;
   if ($preview) {
     $previewIframe = decrypt_iframe($preview['embed_iframe_enc'] ?? null, $preview['embed_iframe_iv'] ?? null);
+    if ($previewIframe === '') $previewIframe = (string)($preview['embed_iframe'] ?? '');
+    $previewHtml = build_admin_video_preview_html($preview, $previewIframe);
   }
 }
 
@@ -656,8 +766,7 @@ $videoTypes = [
             <div class="preview-body">
               <div class="player">
                 <?php
-                  // نطبع iframe بعد فك التشفير (مصدره أنت كأدمن).
-                  echo $previewIframe;
+                  echo $previewHtml;
                 ?>
             </div>
           </div>

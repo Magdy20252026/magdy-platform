@@ -390,7 +390,6 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
                   <a
                     class="acc-modal-btn acc-modal-btn--primary"
                     href="lecture_video_player.php?video_id=<?php echo $videoId; ?>"
-                    target="_blank"
                   >فتح المشغل</a>
                 <?php elseif ($isLectureOpen): ?>
                   <button class="acc-modal-btn acc-modal-btn--ghost" type="button" disabled>انتهت المشاهدات</button>
@@ -443,7 +442,6 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
                   <a
                     class="acc-modal-btn acc-modal-btn--ghost"
                     href="lecture_pdf_viewer.php?pdf_id=<?php echo $pdfId; ?>"
-                    target="_blank"
                   >عرض</a>
                   <div class="acc-item__lock">✅</div>
                 <?php else: ?>

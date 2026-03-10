@@ -320,9 +320,15 @@ function student_decrypt_video_iframe(?string $cipherBase64, ?string $ivHex): st
   $iv = hex2bin($ivHex);
   if ($cipherRaw === false || $iv === false || strlen($iv) !== 16) return '';
 
-  $key = hash('sha256', $secret, true);
-  $plain = openssl_decrypt($cipherRaw, 'AES-256-CBC', $key, OPENSSL_RAW_DATA, $iv);
-  return ($plain === false) ? '' : (string)$plain;
+  $keys = [hash('sha256', $secret, true)];
+  if (strlen($secret) === 32) $keys[] = $secret;
+
+  foreach ($keys as $key) {
+    $plain = openssl_decrypt($cipherRaw, 'AES-256-CBC', $key, OPENSSL_RAW_DATA, $iv);
+    if ($plain !== false) return (string)$plain;
+  }
+
+  return '';
 }
 
 function student_is_allowed_video_embed_url(string $url, string $videoType): bool {
