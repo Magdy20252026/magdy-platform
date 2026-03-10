@@ -181,6 +181,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
         <div class="acc-playerOverlay">
           <span class="acc-playerOverlay__chip"><?php echo h($studentWatermark); ?></span>
         </div>
+        <div class="acc-playerProtectionMask" aria-hidden="true"></div>
         <div class="acc-platformControls" id="lecturePlayerControls" hidden>
           <div class="acc-platformControls__group acc-platformControls__group--actions">
             <button class="acc-modal-btn acc-modal-btn--primary acc-platformControls__iconBtn" type="button" id="lecturePlayerCtrlPlayPause" aria-label="تشغيل أو إيقاف الفيديو" disabled>تشغيل ▶️</button>
@@ -216,7 +217,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
         <?php if (!empty($stats['blocked'])): ?>
           ⛔ لا يمكن تشغيل هذا الفيديو لأن عدد المشاهدات المسموحة انتهى.
         <?php else: ?>
-          🔒 هذه الصفحة محمية: تم تعطيل الكليك اليمين واختصارات أدوات المطور، وسيتم الرجوع فورًا إلى صفحة تفاصيل المحاضرة إذا تم اكتشاف فتح أدوات المطور.
+          🔒 هذه الصفحة محمية: تم تعطيل الكليك اليمين واختصارات أدوات المطور، مع طبقة حماية مرئية على الفيديو وإرجاع تلقائي عند محاولة كشف أو نسخ المحتوى.
         <?php endif; ?>
       </div>
     </section>
@@ -269,6 +270,8 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   var requestInFlight = false;
   var protectedPageClosed = false;
   var devtoolsDetectionStrikes = 0;
+  var controlsHideHandle = 0;
+  var lastImmersiveWakeAt = 0;
   var youtubePlayer = null;
   var youtubeApiReadyPromise = null;
   var youtubeTimeHandle = 0;
@@ -283,6 +286,8 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   const devtoolsCheckIntervalMs = 400;
   const fallbackHalfSeconds = 30;
   const seekDeltaSeconds = 10;
+  const immersiveControlsAutoHideDelayMs = 1800;
+  const immersiveControlsWakeThrottleMs = 180;
   const youtubeStatePlaying = 1;
 
   function ensureValidHalfSeconds(nextValue) {
@@ -369,7 +374,38 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
     if (playerStage && playerStage.classList) {
       if (visible) playerStage.classList.add('acc-playerStage--platformControls');
       else playerStage.classList.remove('acc-playerStage--platformControls');
+      if (!visible) {
+        playerStage.classList.remove('acc-playerStage--controlsVisible');
+      }
     }
+    if (visible) toggleImmersiveControlsVisibility(true);
+    else clearControlsHideTimer();
+  }
+
+  function clearControlsHideTimer() {
+    if (controlsHideHandle) {
+      window.clearTimeout(controlsHideHandle);
+      controlsHideHandle = 0;
+    }
+  }
+
+  function toggleImmersiveControlsVisibility(forceVisible) {
+    if (!playerStage || !platformControls || platformControls.hidden) return;
+    var isFullscreen = !!document.fullscreenElement;
+    if (!isFullscreen) {
+      clearControlsHideTimer();
+      playerStage.classList.remove('acc-playerStage--immersive');
+      playerStage.classList.add('acc-playerStage--controlsVisible');
+      return;
+    }
+
+    playerStage.classList.add('acc-playerStage--immersive');
+    if (forceVisible) playerStage.classList.add('acc-playerStage--controlsVisible');
+    clearControlsHideTimer();
+    controlsHideHandle = window.setTimeout(function(){
+      if (!document.fullscreenElement || !playerStage) return;
+      playerStage.classList.remove('acc-playerStage--controlsVisible');
+    }, immersiveControlsAutoHideDelayMs);
   }
 
   function formatClock(seconds) {
@@ -726,6 +762,19 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
 
     document.addEventListener('fullscreenchange', function(){
       fullscreenBtn.textContent = document.fullscreenElement ? 'إغلاق التكبير 🡼' : 'تكبير ⛶';
+      toggleImmersiveControlsVisibility(true);
+    });
+  }
+
+  if (playerStage) {
+    ['mousemove', 'touchstart', 'touchmove', 'pointerdown'].forEach(function(evt){
+      playerStage.addEventListener(evt, function(){
+        if (!document.fullscreenElement) return;
+        var now = Date.now();
+        if (now - lastImmersiveWakeAt < immersiveControlsWakeThrottleMs) return;
+        lastImmersiveWakeAt = now;
+        toggleImmersiveControlsVisibility(true);
+      }, {passive:true});
     });
   }
 
