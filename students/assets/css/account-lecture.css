@@ -594,6 +594,12 @@
 }
 
 @media (max-width: 640px){
+  .acc-viewerFrameShell .acc-playerStage .acc-platformControls{
+    position: static;
+    inset: auto;
+    margin: 10px;
+  }
+
   .acc-viewerHero__top{
     align-items:stretch;
   }
