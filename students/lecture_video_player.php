@@ -308,7 +308,12 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   var captureShieldVisibleUntil = 0;
   var lastCaptureShieldTriggerAt = 0;
   var captureShieldLocked = false;
+  var captureShieldHeldIndefinitely = false;
   var initialShieldMessage = '🔒 الفيديو محجوب افتراضيًا للحماية. اضغط على زر فتح المشغل المحمي لعرض الفيديو داخل الصفحة الآمنة.';
+  var hiddenShieldMessage = '⚫️ تم تعتيم المشغل تلقائيًا لحماية المحتوى عند محاولة تصوير الشاشة أو مغادرة الصفحة. افتح المشغل المحمي يدويًا للمتابعة.';
+  var blurShieldMessage = '⚫️ تم تعتيم المشغل تلقائيًا لحماية المحتوى عند محاولة تصوير الشاشة أو سحب التركيز من نافذة المشغل. افتح المشغل المحمي يدويًا للمتابعة.';
+  var recordShieldMessage = '⚫️ تم تعتيم المشغل تلقائيًا لحماية المحتوى عند محاولة تصوير أو تسجيل الشاشة. افتح المشغل المحمي يدويًا للمتابعة.';
+  var mobileExitShieldMessage = '🔒 تم إعادة حجب الفيديو بعد الخروج من العرض الآمن على هذا الجهاز. اضغط على فتح المشغل المحمي للمتابعة.';
 
   function ensureValidHalfSeconds(nextValue) {
     return Math.max(5, parseInt(nextValue || videoState.halfSeconds || fallbackHalfSeconds, 10));
@@ -392,9 +397,11 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   function hideCaptureShield(force) {
     if (!captureShield) return;
     if (captureShieldLocked && !force) return;
+    if (captureShieldHeldIndefinitely && !force) return;
     if (!force && Date.now() < captureShieldVisibleUntil) return;
     if (force) {
       captureShieldLocked = false;
+      captureShieldHeldIndefinitely = false;
       captureShieldVisibleUntil = 0;
     }
     captureShield.classList.remove('acc-captureShield--active', 'acc-captureShield--locked');
@@ -417,8 +424,9 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
       captureShieldHandle = 0;
     }
     captureShieldLocked = true;
+    captureShieldHeldIndefinitely = true;
     setCaptureShieldMessage(reason || initialShieldMessage);
-    captureShieldVisibleUntil = Number.MAX_SAFE_INTEGER;
+    captureShieldVisibleUntil = 0;
     captureShield.classList.add('acc-captureShield--active', 'acc-captureShield--locked');
     playerStage.classList.add('acc-playerStage--captureBlocked');
     if (captureShieldActionBtn) {
@@ -432,6 +440,15 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   function isLikelyMobilePlayback() {
     if (!window.matchMedia) return false;
     return window.matchMedia('(pointer: coarse)').matches || window.matchMedia('(max-width: 980px)').matches;
+  }
+
+  function requestSecureFullscreen(target) {
+    if (!target) return null;
+    return target.requestFullscreen ||
+      target.webkitRequestFullscreen ||
+      target.mozRequestFullScreen ||
+      target.msRequestFullscreen ||
+      null;
   }
 
   function unlockProtectedPlayback() {
@@ -462,6 +479,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
       captureShieldHandle = 0;
     }
     captureShieldLocked = false;
+    captureShieldHeldIndefinitely = false;
     if (captureShieldActionBtn) captureShieldActionBtn.disabled = false;
     captureShield.classList.remove('acc-captureShield--locked');
     if (reason) setCaptureShieldMessage(reason);
@@ -891,7 +909,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
       fullscreenBtn.textContent = document.fullscreenElement ? '🡼 إنهاء التكبير' : '⛶ تكبير';
       if (ctrlFullscreenBtn) ctrlFullscreenBtn.textContent = fullscreenBtn.textContent;
       if (!document.fullscreenElement && isLikelyMobilePlayback() && playbackBootstrapped && !protectedPageClosed) {
-        setCaptureShieldLocked('🔒 تم إعادة حجب الفيديو بعد الخروج من العرض الآمن على هذا الجهاز. اضغط على فتح المشغل المحمي للمتابعة.');
+        setCaptureShieldLocked(mobileExitShieldMessage);
         updateNotice('🔒 تمت إعادة حماية الفيديو بعد الخروج من العرض الآمن. افتح المشغل المحمي للمتابعة.', true);
       }
       toggleImmersiveControlsVisibility(true);
@@ -1049,7 +1067,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
     captureShieldActionBtn.addEventListener('click', function(e){
       e.preventDefault();
       if (isLikelyMobilePlayback() && playerStage && !document.fullscreenElement) {
-        var requestFullscreen = playerStage.requestFullscreen || playerStage.webkitRequestFullscreen;
+        var requestFullscreen = requestSecureFullscreen(playerStage);
         if (typeof requestFullscreen === 'function') {
           try {
             var fullscreenResult = requestFullscreen.call(playerStage);
@@ -1096,23 +1114,24 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
 
   document.addEventListener('visibilitychange', function(){
     if (document.visibilityState === 'hidden') {
-      setCaptureShieldLocked('⚫️ تم تعتيم المشغل تلقائيًا لحماية المحتوى عند محاولة تصوير الشاشة أو مغادرة الصفحة. افتح المشغل المحمي يدويًا للمتابعة.');
+      setCaptureShieldLocked(hiddenShieldMessage);
       sendProgress('heartbeat');
       return;
+    }
+    if (captureShieldLocked && !protectedPageClosed && !videoState.isBlocked) {
+      updateNotice('🔒 عادت الصفحة إلى الواجهة، لكن الفيديو سيبقى محجوبًا حتى تضغط على "فتح المشغل المحمي" مرة أخرى.', false);
     }
   });
   window.addEventListener('blur', function(){
     window.setTimeout(function(){
-      var reason = document.visibilityState === 'hidden'
-        ? '⚫️ تم تعتيم المشغل تلقائيًا لحماية المحتوى عند محاولة تصوير أو تسجيل الشاشة.'
-        : '⚫️ تم تعتيم المشغل تلقائيًا لحماية المحتوى عند محاولة تصوير الشاشة أو سحب التركيز من نافذة المشغل.';
-      setCaptureShieldLocked(reason + ' افتح المشغل المحمي يدويًا للمتابعة.');
+      setCaptureShieldLocked(document.visibilityState === 'hidden' ? recordShieldMessage : blurShieldMessage);
       sendProgress('heartbeat');
     }, blurCheckDelayMs);
   });
   window.addEventListener('pagehide', function(){
     if (protectedPageClosed || videoState.isBlocked) return;
     setCaptureShieldLocked('⚫️ تمت إعادة حجب المشغل مباشرة عند مغادرة الصفحة أو إخفائها لحماية الفيديو.');
+    sendProgress('heartbeat');
   });
 
   window.addEventListener('beforeunload', function(){
