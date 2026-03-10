@@ -225,7 +225,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
         <?php if (!empty($stats['blocked'])): ?>
           ⛔ لا يمكن تشغيل هذا الفيديو لأن عدد المشاهدات المسموحة انتهى.
         <?php else: ?>
-          🔒 هذه الصفحة محمية: الفيديو يبقى محجوبًا افتراضيًا ولا يُفتح إلا من داخل طبقة الحماية، وعلى الموبايل يلزم ملء الشاشة مع إمكانية تدوير العرض أثناء التشغيل، بينما تبقى حماية فقدان التركيز الصارمة على أجهزة الكمبيوتر.
+          🔒 هذه الصفحة محمية: الفيديو يفتح من طبقة الحماية فقط. على الموبايل يلزم ملء الشاشة ويدعم العرض الأفقي أثناء التشغيل، بينما تبقى حماية فقدان التركيز الصارمة على الكمبيوتر.
         <?php endif; ?>
       </div>
     </section>
@@ -306,6 +306,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   const blurCheckDelayMs = 120;
   const fullscreenActivationDelayMs = 220;
   const mobileSecureStateResizeDebounceMs = 180;
+  // 12s covers opening quick settings and starting the built-in mobile screen recorder without leaving the exception open for long
   const mobileSystemOverlayGraceMs = 12000;
   var captureShieldHandle = 0;
   var captureShieldVisibleUntil = 0;
@@ -500,6 +501,10 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
     return isLikelyMobilePlayback() && mobileSystemOverlayGraceUntil > Date.now();
   }
 
+  function hasMobileSecurePlaybackState() {
+    return isStageFullscreenActive() || hasMobileSystemOverlayGrace();
+  }
+
   function allowMobileSystemOverlayGrace() {
     if (!isLikelyMobilePlayback() || !playbackBootstrapped || protectedPageClosed || videoState.isBlocked) return false;
     if (!isStageFullscreenActive() && !hasMobileSystemOverlayGrace()) return false;
@@ -508,14 +513,17 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   }
 
   function hasSecurePlaybackFocus() {
-    if (isLikelyMobilePlayback()) return isStageFullscreenActive() || hasMobileSystemOverlayGrace();
+    // Mobile browsers briefly blur/hide fullscreen video when quick system overlays open, so fullscreen state is the primary signal there.
+    if (isLikelyMobilePlayback()) return hasMobileSecurePlaybackState();
     if (document.visibilityState === 'hidden') return false;
     if (!hasDocumentFocus()) return false;
     return true;
   }
 
   function securePlaybackLockReason() {
-    if (isLikelyMobilePlayback() && !isStageFullscreenActive() && !hasMobileSystemOverlayGrace()) return mobileSecureStateShieldMessage;
+    if (isLikelyMobilePlayback()) {
+      return hasMobileSecurePlaybackState() ? '' : mobileSecureStateShieldMessage;
+    }
     if (document.visibilityState === 'hidden') return hiddenShieldMessage;
     if (!hasDocumentFocus()) return blurShieldMessage;
     return '';
@@ -1002,7 +1010,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
       } else if (document.fullscreenElement && isLikelyMobilePlayback() && !protectedPageClosed && !videoState.isBlocked) {
         allowMobileSystemOverlayGrace();
         lockMobileLandscapeOrientation();
-        updateNotice('✅ تم تفعيل العرض الآمن بملء الشاشة على هذا الجهاز. يمكنك تدوير الهاتف لمشهد أفقي ومتابعة تشغيل الفيديو من داخل المشغل.', false);
+        updateNotice('✅ تم تفعيل العرض الآمن بملء الشاشة على هذا الجهاز. سيتم استخدام العرض الأفقي عند دعمه، ويمكنك متابعة تشغيل الفيديو من داخل المشغل.', false);
       }
       toggleImmersiveControlsVisibility(true);
     });
