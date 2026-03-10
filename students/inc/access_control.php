@@ -292,13 +292,124 @@ function student_decrypt_video_iframe(?string $cipherBase64, ?string $ivHex): st
   return ($plain === false) ? '' : (string)$plain;
 }
 
+function student_is_allowed_video_embed_url(string $url, string $videoType): bool {
+  $url = trim(html_entity_decode($url, ENT_QUOTES, 'UTF-8'));
+  $videoType = strtolower(trim($videoType));
+  if ($url === '' || $videoType === '') return false;
+  if (strpos($url, '//') === 0) $url = 'https:' . $url;
+
+  $parts = @parse_url($url);
+  if (!is_array($parts)) return false;
+
+  $scheme = strtolower((string)($parts['scheme'] ?? ''));
+  $host = strtolower((string)($parts['host'] ?? ''));
+  if (!in_array($scheme, ['http', 'https'], true) || $host === '') return false;
+
+  $allowedHosts = [
+    'youtube' => ['youtube.com', 'youtu.be', 'youtube-nocookie.com'],
+    'bunny' => ['mediadelivery.net', 'bunnycdn.com', 'bunny.net'],
+    'inkrypt' => ['inkryptvideos.com'],
+    'vimeo' => ['vimeo.com'],
+    'vdocipher' => ['vdocipher.com', 'vdo.ai'],
+  ];
+
+  if (empty($allowedHosts[$videoType])) return false;
+
+  foreach ($allowedHosts[$videoType] as $allowedHost) {
+    if (
+      $host === $allowedHost ||
+      substr($host, -strlen('.' . $allowedHost)) === '.' . $allowedHost
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function student_is_supported_video_embed_html(string $embedHtml, string $videoType): bool {
+  $embedHtml = trim($embedHtml);
+  $videoType = strtolower(trim($videoType));
+  if ($embedHtml === '' || $videoType === '') return false;
+  if (!class_exists('DOMDocument')) return false;
+
+  $internalErrors = libxml_use_internal_errors(true);
+  $dom = new DOMDocument('1.0', 'UTF-8');
+  $loaded = $dom->loadHTML(
+    '<?xml encoding="utf-8" ?><div id="__student_embed_root__">' . $embedHtml . '</div>',
+    LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD
+  );
+  libxml_clear_errors();
+  libxml_use_internal_errors($internalErrors);
+  if (!$loaded) return false;
+
+  $root = $dom->getElementsByTagName('div')->item(0);
+  if (!$root) return false;
+
+  $allowedTags = ['div', 'iframe', 'script'];
+  $allowedAttrs = ['id', 'class', 'src', 'type', 'async', 'defer', 'title', 'loading', 'referrerpolicy', 'allow', 'allowfullscreen', 'width', 'height', 'frameborder', 'scrolling', 'name', 'sandbox'];
+  $hasTrustedSource = false;
+
+  foreach ($root->getElementsByTagName('*') as $node) {
+    $tag = strtolower((string)$node->nodeName);
+    if (!in_array($tag, $allowedTags, true)) return false;
+
+    if ($node->attributes) {
+      foreach ($node->attributes as $attr) {
+        $name = strtolower((string)$attr->nodeName);
+        $value = trim((string)$attr->nodeValue);
+
+        if (strpos($name, 'on') === 0) return false;
+        if (preg_match('~(?:javascript|vbscript|data)\s*:|%(?:0*[46]a|0*64|0*61|0*76|0*73)~i', $value)) return false;
+
+        $isAllowedName =
+          in_array($name, $allowedAttrs, true) ||
+          strpos($name, 'data-') === 0 ||
+          strpos($name, 'aria-') === 0;
+        if (!$isAllowedName) return false;
+
+        if ($name === 'src') {
+          if (!student_is_allowed_video_embed_url($value, $videoType)) return false;
+          $hasTrustedSource = true;
+        }
+      }
+    }
+
+    if ($tag === 'iframe' && !$node->hasAttribute('src')) return false;
+
+    if ($tag === 'script' && !$node->hasAttribute('src')) {
+      $scriptText = trim((string)$node->textContent);
+      if ($scriptText === '') continue;
+      if (preg_match('~(?:javascript|vbscript|data)\s*:~i', $scriptText)) return false;
+      if (preg_match('~(?:eval\s*\(|new\s+Function\s*\(|setTimeout\s*\(\s*[\'"]|setInterval\s*\(\s*[\'"])~i', $scriptText)) return false;
+
+      preg_match_all('~(?:(?:https?:)?//)[a-z0-9.-]+(?::\d+)?(?:/[^\s\'"]*)?~i', $scriptText, $matches);
+      $urls = $matches[0] ?? [];
+      if (empty($urls) && !$hasTrustedSource) return false;
+
+      foreach ($urls as $url) {
+        if (!student_is_allowed_video_embed_url($url, $videoType)) return false;
+      }
+
+      if (!empty($urls)) $hasTrustedSource = true;
+    }
+  }
+
+  return $hasTrustedSource;
+}
+
 function student_build_video_player_html(array $videoRow, string $origin = ''): string {
   $iframeHtml = student_decrypt_video_iframe($videoRow['embed_iframe_enc'] ?? null, $videoRow['embed_iframe_iv'] ?? null);
   if ($iframeHtml === '') $iframeHtml = (string)($videoRow['embed_iframe'] ?? '');
+  $iframeHtml = trim($iframeHtml);
 
   $src = student_extract_iframe_src($iframeHtml);
   $src = student_normalize_video_src($src, (string)($videoRow['video_type'] ?? ''), $origin);
-  if ($src === '') return '';
+  if ($src === '') {
+    if ($iframeHtml === '') return '';
+    if (!student_is_supported_video_embed_html($iframeHtml, (string)($videoRow['video_type'] ?? ''))) return '';
+    return '<div class="acc-embeddedHtml" id="lectureVideoEmbed">' . $iframeHtml . '</div>';
+  }
 
   $title = htmlspecialchars((string)($videoRow['title'] ?? 'مشغل الفيديو'), ENT_QUOTES, 'UTF-8');
   $srcAttr = htmlspecialchars($src, ENT_QUOTES, 'UTF-8');
