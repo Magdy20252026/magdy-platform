@@ -18,7 +18,7 @@ if ($studentId <= 0 || $videoId <= 0) {
   exit;
 }
 
-$video = student_get_video_row($pdo, $videoId);
+$video = student_get_video_row($pdo, $videoId); // defined in students/inc/access_control.php
 if (!$video) {
   header('Location: account.php?page=platform_courses');
   exit;
@@ -107,7 +107,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   <div class="container">
     <div class="acc-topbar__bar">
       <div class="acc-topbar__right">
-        <a class="acc-brand" href="account_lecture.php?lecture_id=<?php echo (int)$lectureId; ?>" aria-label="<?php echo h($platformName); ?>">
+        <a class="acc-brand" href="account_lecture.php?lecture_id=<?php echo (int)$lectureId; ?>" aria-label="العودة إلى صفحة المحاضرة">
           <?php if ($logoUrl): ?>
             <img class="acc-brand__logo" src="<?php echo h($logoUrl); ?>" alt="Logo">
           <?php else: ?>
@@ -234,6 +234,15 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   var requestInFlight = false;
   var protectedPageClosed = false;
   var devtoolsDetectionStrikes = 0;
+  const devtoolsWidthGapThreshold = 240;
+  const devtoolsHeightGapThreshold = 200;
+  const devtoolsStrikeThreshold = 5;
+  const devtoolsCheckIntervalMs = 1200;
+  const fallbackHalfSeconds = 30;
+
+  function ensureValidHalfSeconds(nextValue) {
+    return Math.max(5, parseInt(nextValue || videoState.halfSeconds || fallbackHalfSeconds, 10));
+  }
 
   function updateNotice(text, isError) {
     if (!noticeEl) return;
@@ -364,7 +373,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
 
       if (data.stats) syncStats(data.stats);
       if (typeof data.half_seconds !== 'undefined') {
-        videoState.halfSeconds = Math.max(5, parseInt(data.half_seconds || videoState.halfSeconds || 30, 10));
+        videoState.halfSeconds = ensureValidHalfSeconds(data.half_seconds);
         if (halfSecondsEl) halfSecondsEl.textContent = videoState.halfSeconds;
       }
       if (typeof data.watched_seconds !== 'undefined') {
@@ -435,7 +444,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
       activeWatchToken = data.watch_token || '';
       countedToken = '';
       if (typeof data.half_seconds !== 'undefined') {
-        videoState.halfSeconds = Math.max(5, parseInt(data.half_seconds || videoState.halfSeconds || 30, 10));
+        videoState.halfSeconds = ensureValidHalfSeconds(data.half_seconds);
         if (halfSecondsEl) halfSecondsEl.textContent = videoState.halfSeconds;
       }
 
@@ -470,7 +479,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
     window.setTimeout(function(){
       try { window.open('', '_self'); } catch (e) {}
       try { window.close(); } catch (e) {}
-      window.location.replace('about:blank');
+      window.location.replace('account_lecture.php?lecture_id=' + lectureId);
     }, 150);
   }
 
@@ -533,8 +542,8 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
     var widthGap = Math.abs(window.outerWidth - window.innerWidth);
     var heightGap = Math.abs(window.outerHeight - window.innerHeight);
     var devtoolsOpen =
-      widthGap > 220 ||
-      heightGap > 180;
+      widthGap > devtoolsWidthGapThreshold ||
+      heightGap > devtoolsHeightGapThreshold;
 
     if (devtoolsOpen) {
       devtoolsDetectionStrikes++;
@@ -542,10 +551,10 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
       devtoolsDetectionStrikes = 0;
     }
 
-    if (devtoolsDetectionStrikes >= 3) {
+    if (devtoolsDetectionStrikes >= devtoolsStrikeThreshold) {
       closeProtectedPage('⛔ تم اكتشاف فتح أدوات المطور، وتم إغلاق الصفحة لحماية الفيديو.');
     }
-  }, 1200);
+  }, devtoolsCheckIntervalMs);
 })();
 </script>
 </body>

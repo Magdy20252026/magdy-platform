@@ -18,7 +18,10 @@ function lecture_video_api_response(array $payload): void {
   exit;
 }
 
-const LECTURE_VIDEO_MAX_HEARTBEAT_DELTA_SECONDS = 20; // cap to nearby heartbeat windows to avoid inflating watch time
+const LECTURE_VIDEO_HEARTBEAT_INTERVAL_SECONDS = 10;
+// Allows one heartbeat window plus a 10-second grace period
+// to prevent large idle gaps from inflating watch time.
+const LECTURE_VIDEO_MAX_WATCH_TIME_INCREMENT_SECONDS = LECTURE_VIDEO_HEARTBEAT_INTERVAL_SECONDS + 10;
 
 if ($studentId <= 0 || $videoId <= 0 || !in_array($action, ['start', 'heartbeat', 'complete'], true)) {
   lecture_video_api_response(['ok' => false, 'message' => 'طلب غير صالح.']);
@@ -148,11 +151,14 @@ if (!empty($watch['counted'])) {
 $now = time();
 $startedAt = (int)($watch['started_at'] ?? $now);
 $lastPingAt = (int)($watch['last_ping_at'] ?? $startedAt);
+// Session recreation after a refresh or timeout recovery can leave
+// a stale ping timestamp; normalize it so watch time never starts
+// before the actual session start.
 if ($lastPingAt < $startedAt) $lastPingAt = $startedAt;
 
 $watchedSeconds = max(0, (int)($watch['watched_seconds'] ?? 0));
 $delta = max(0, $now - $lastPingAt);
-if ($delta > LECTURE_VIDEO_MAX_HEARTBEAT_DELTA_SECONDS) $delta = LECTURE_VIDEO_MAX_HEARTBEAT_DELTA_SECONDS;
+if ($delta > LECTURE_VIDEO_MAX_WATCH_TIME_INCREMENT_SECONDS) $delta = LECTURE_VIDEO_MAX_WATCH_TIME_INCREMENT_SECONDS;
 if ($delta > 0) {
   $watchedSeconds += $delta;
 }

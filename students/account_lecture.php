@@ -440,11 +440,11 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
 
               <div class="acc-item__side">
                 <?php if ($isLectureOpen): ?>
-                  <button
+                  <a
                     class="acc-modal-btn acc-modal-btn--ghost"
-                    type="button"
-                    onclick="window.open('lecture_pdf_viewer.php?pdf_id=<?php echo $pdfId; ?>', '_blank')"
-                  >عرض</button>
+                    href="lecture_pdf_viewer.php?pdf_id=<?php echo $pdfId; ?>"
+                    target="_blank"
+                  >عرض</a>
                   <div class="acc-item__lock">✅</div>
                 <?php else: ?>
                   <div class="acc-item__lock">🔒</div>
