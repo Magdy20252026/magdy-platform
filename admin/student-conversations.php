@@ -84,7 +84,7 @@ if (($_POST['action'] ?? '') === 'save_profile') {
       $stmt = $pdo->prepare('UPDATE admin_chat_profiles SET display_name=?, is_online=? WHERE admin_id=?');
       $stmt->execute([$displayName, $isOnline, $adminId]);
     }
-    header('Location: student-chat.php?profile_saved=1');
+    header('Location: student-conversations.php?profile_saved=1');
     exit;
   } catch (Throwable $e) {
     $error = $e instanceof RuntimeException ? $e->getMessage() : 'تعذر حفظ بيانات الشات.';
@@ -107,7 +107,7 @@ if (($_POST['action'] ?? '') === 'send_message') {
         $stmt->execute([$conversationId, 'admin', $adminId, $message]);
         $pdo->prepare('UPDATE student_chat_conversations SET updated_at=NOW() WHERE id=?')->execute([$conversationId]);
         $pdo->prepare("UPDATE student_chat_messages SET is_read=1 WHERE conversation_id=? AND sender_type='student'")->execute([$conversationId]);
-        header('Location: student-chat.php?chat_id=' . $conversationId . '&sent=1');
+        header('Location: student-conversations.php?chat_id=' . $conversationId . '&sent=1');
         exit;
       }
     } catch (Throwable $e) {
@@ -202,7 +202,7 @@ $menu = [
   ['key' => 'student_notifications', 'label' => 'اشعارات الطلاب', 'icon' => '🔔', 'href' => 'student-notifications.php'],
   ['key' => 'attendance', 'label' => 'حضور الطلاب', 'icon' => '🧾', 'href' => 'attendance.php'],
   ['key' => 'facebook', 'label' => 'فيس بوك المنصة', 'icon' => '📘', 'href' => 'platform-posts.php'],
-  ['key' => 'chat', 'label' => 'شات الطلاب', 'icon' => '💬', 'href' => 'student-chat.php', 'active' => true],
+  ['key' => 'chat', 'label' => 'شات الطلاب', 'icon' => '💬', 'href' => 'student-conversations.php', 'active' => true],
   ['key' => 'settings', 'label' => 'الإعدادات', 'icon' => '⚙️', 'href' => 'settings.php'],
   ['key' => 'logout', 'label' => 'تسجيل الخروج', 'icon' => '🚪', 'href' => 'logout.php', 'danger' => true],
 ];
@@ -274,7 +274,7 @@ if ($adminRole !== 'مدير') {
           <?php if (!$conversations): ?><div class="chat-empty">لا توجد محادثات حتى الآن.</div><?php endif; ?>
           <?php foreach ($conversations as $conv): ?>
             <?php $isActive = ((int)$conv['id'] === $selectedChatId); ?>
-            <a class="conv-item <?php echo $isActive ? 'is-active' : ''; ?>" href="student-chat.php?chat_id=<?php echo (int)$conv['id']; ?>">
+            <a class="conv-item <?php echo $isActive ? 'is-active' : ''; ?>" href="student-conversations.php?chat_id=<?php echo (int)$conv['id']; ?>">
               <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;">
                 <div>
                   <div style="font-weight:1000;">🧑‍🎓 <?php echo h((string)$conv['full_name']); ?></div>
