@@ -306,6 +306,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   const blurCheckDelayMs = 120;
   const fullscreenActivationDelayMs = 220;
   const mobileSecureStateResizeDebounceMs = 180;
+  const mobileSystemOverlayGraceMs = 12000;
   var captureShieldHandle = 0;
   var captureShieldVisibleUntil = 0;
   var lastCaptureShieldTriggerAt = 0;
@@ -313,6 +314,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   var captureShieldHeldIndefinitely = false;
   var fullscreenUnlockHandle = 0;
   var mobileSecureStateResizeHandle = 0;
+  var mobileSystemOverlayGraceUntil = 0;
   var initialShieldMessage = '🔒 الفيديو محجوب افتراضيًا للحماية. اضغط على زر فتح المشغل المحمي لعرض الفيديو داخل الصفحة الآمنة. وعلى الموبايل سيظل محجوبًا حتى يتم تفعيل ملء الشاشة.';
   var hiddenShieldMessage = '⚫️ تم تعتيم المشغل تلقائيًا لحماية المحتوى عند محاولة تصوير الشاشة أو مغادرة الصفحة. افتح المشغل المحمي يدويًا للمتابعة.';
   var blurShieldMessage = '⚫️ تم تعتيم المشغل تلقائيًا لحماية المحتوى عند محاولة تصوير الشاشة أو سحب التركيز من نافذة المشغل. افتح المشغل المحمي يدويًا للمتابعة.';
@@ -474,9 +476,9 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
     if (!isLikelyMobilePlayback() || !isStageFullscreenActive()) return;
     if (!window.screen || !window.screen.orientation || typeof window.screen.orientation.lock !== 'function') return;
     try {
-      var lockResult = window.screen.orientation.lock('landscape');
-      if (lockResult && typeof lockResult.catch === 'function') {
-        lockResult.catch(function(){});
+      var lockPromise = window.screen.orientation.lock('landscape');
+      if (lockPromise && typeof lockPromise.catch === 'function') {
+        lockPromise.catch(function(){});
       }
     } catch(e) {}
   }
@@ -494,15 +496,26 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
     return false;
   }
 
+  function hasMobileSystemOverlayGrace() {
+    return isLikelyMobilePlayback() && mobileSystemOverlayGraceUntil > Date.now();
+  }
+
+  function allowMobileSystemOverlayGrace() {
+    if (!isLikelyMobilePlayback() || !playbackBootstrapped || protectedPageClosed || videoState.isBlocked) return false;
+    if (!isStageFullscreenActive() && !hasMobileSystemOverlayGrace()) return false;
+    mobileSystemOverlayGraceUntil = Date.now() + mobileSystemOverlayGraceMs;
+    return true;
+  }
+
   function hasSecurePlaybackFocus() {
-    if (isLikelyMobilePlayback()) return isStageFullscreenActive();
+    if (isLikelyMobilePlayback()) return isStageFullscreenActive() || hasMobileSystemOverlayGrace();
     if (document.visibilityState === 'hidden') return false;
     if (!hasDocumentFocus()) return false;
     return true;
   }
 
   function securePlaybackLockReason() {
-    if (isLikelyMobilePlayback() && !isStageFullscreenActive()) return mobileSecureStateShieldMessage;
+    if (isLikelyMobilePlayback() && !isStageFullscreenActive() && !hasMobileSystemOverlayGrace()) return mobileSecureStateShieldMessage;
     if (document.visibilityState === 'hidden') return hiddenShieldMessage;
     if (!hasDocumentFocus()) return blurShieldMessage;
     return '';
@@ -982,10 +995,12 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
       fullscreenBtn.textContent = document.fullscreenElement ? '🡼 إنهاء التكبير' : '⛶ تكبير';
       if (ctrlFullscreenBtn) ctrlFullscreenBtn.textContent = fullscreenBtn.textContent;
       if (!document.fullscreenElement && isLikelyMobilePlayback() && playbackBootstrapped && !protectedPageClosed) {
+        mobileSystemOverlayGraceUntil = 0;
         unlockMobileLandscapeOrientation();
         setCaptureShieldLocked(mobileExitShieldMessage);
         updateNotice('🔒 تمت إعادة حماية الفيديو بعد الخروج من العرض الآمن. افتح المشغل المحمي للمتابعة.', true);
       } else if (document.fullscreenElement && isLikelyMobilePlayback() && !protectedPageClosed && !videoState.isBlocked) {
+        allowMobileSystemOverlayGrace();
         lockMobileLandscapeOrientation();
         updateNotice('✅ تم تفعيل العرض الآمن بملء الشاشة على هذا الجهاز. يمكنك تدوير الهاتف لمشهد أفقي ومتابعة تشغيل الفيديو من داخل المشغل.', false);
       }
@@ -1211,7 +1226,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
 
   document.addEventListener('visibilitychange', function(){
     if (document.visibilityState === 'hidden') {
-      if (isLikelyMobilePlayback()) {
+      if (allowMobileSystemOverlayGrace()) {
         sendProgress('heartbeat');
         return;
       }
@@ -1225,7 +1240,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   });
   window.addEventListener('blur', function(){
     window.setTimeout(function(){
-      if (isLikelyMobilePlayback()) {
+      if (allowMobileSystemOverlayGrace()) {
         sendProgress('heartbeat');
         return;
       }
@@ -1235,7 +1250,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   });
   window.addEventListener('pagehide', function(){
     if (protectedPageClosed || videoState.isBlocked) return;
-    if (isLikelyMobilePlayback()) {
+    if (allowMobileSystemOverlayGrace()) {
       sendProgress('heartbeat');
       return;
     }
