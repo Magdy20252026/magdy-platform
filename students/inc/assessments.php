@@ -261,7 +261,9 @@ function student_assessment_attempt_is_completed(PDO $pdo, string $type, ?array 
   }
 
   $attemptId = (int)($attempt['id'] ?? 0);
-  if ($attemptId <= 0) return false;
+  if ($attemptId <= 0) {
+    return false;
+  }
 
   $summary = student_assessment_attempt_answer_summary($pdo, $type, $attemptId);
   return $summary['question_count'] > 0 && $summary['answered_count'] >= $summary['question_count'];
