@@ -31,6 +31,7 @@
   --danger-soft-border:rgba(207,42,55,.26);
   --warning-soft-bg:rgba(176,96,0,.12);
   --warning-soft-border:rgba(176,96,0,.26);
+  --placeholder-bg:rgba(0,0,0,.06);
 
   --radius:18px;
 
@@ -78,6 +79,7 @@ html[data-theme="dark"]{
   --danger-soft-border:rgba(255,157,157,.34);
   --warning-soft-bg:rgba(255,191,105,.16);
   --warning-soft-border:rgba(255,191,105,.34);
+  --placeholder-bg:rgba(255,255,255,.04);
 
   /* ✅ Header tokens in dark */
   --hdr-bg:#11161a;

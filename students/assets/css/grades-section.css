@@ -43,15 +43,11 @@
   display:block;
   position: relative;
   overflow:hidden;
-  background: rgba(0,0,0,.06);
+  background: var(--placeholder-bg);
   text-decoration:none;
   outline: none;
   cursor: pointer;
   touch-action: manipulation;
-}
-
-html[data-theme="dark"] .grade-cardx__mediaLink{
-  background: rgba(255,255,255,.04);
 }
 
 /* ✅ show full image (no crop) */

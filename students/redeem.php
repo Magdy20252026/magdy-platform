@@ -185,7 +185,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   <div class="redeem-shell">
     <section class="card redeem-card">
       <h2 class="h1">تفعيل كود</h2>
-      <p class="muted">يمكنك إدخال كود الاشتراك هنا وسيتم تطبيق الألوان المناسبة حسب الثيم الحالي.</p>
+      <p class="muted">أدخل كود الاشتراك لفتح الكورس أو المحاضرة المرتبطة به على حسابك.</p>
 
       <?php if ($msg): ?><div class="box ok"><?php echo h($msg); ?></div><?php endif; ?>
       <?php if ($err): ?><div class="box bad"><?php echo h($err); ?></div><?php endif; ?>

@@ -541,7 +541,12 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
     msgEl.className = '';
     backdrop.style.display = 'flex';
   }
-  function closeModal() { backdrop.style.display = 'none'; }
+  function closeModal() {
+    backdrop.style.display = 'none';
+    msgEl.style.display = 'none';
+    msgEl.textContent = '';
+    msgEl.className = '';
+  }
   function showMsg(text, ok) {
     msgEl.textContent = text;
     msgEl.style.display = 'block';

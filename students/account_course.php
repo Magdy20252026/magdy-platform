@@ -529,6 +529,9 @@ $effectiveCoursePriceStr = number_format($effectiveCoursePrice, 2);
   }
   function closeModal() {
     backdrop.style.display = 'none';
+    msgEl.style.display = 'none';
+    msgEl.textContent = '';
+    msgEl.className = '';
   }
   function showMsg(text, ok) {
     msgEl.textContent = text;
