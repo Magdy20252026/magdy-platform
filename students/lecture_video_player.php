@@ -310,6 +310,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   const mobileLandscapeLockRetryCount = 4;
   const mobileViewportOverlayThresholdPx = 20;
   const mobileViewportOffsetThresholdPx = 2;
+  // Keep this slightly above the 20px viewport-gap threshold so tiny fullscreen jitter is ignored, but notification-shade shrink still trips the shield.
   const mobileViewportBaselineShrinkThresholdPx = 24;
   var captureShieldHandle = 0;
   var captureShieldVisibleUntil = 0;
@@ -537,6 +538,15 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
     mobileSecureViewportSnapshot = getMobileViewportMetrics();
   }
 
+  function getViewportMajorMinorDimensions(metrics) {
+    return {
+      layoutMajor: Math.max(metrics.layoutWidth, metrics.layoutHeight),
+      layoutMinor: Math.min(metrics.layoutWidth, metrics.layoutHeight),
+      viewportMajor: Math.max(metrics.viewportWidth, metrics.viewportHeight),
+      viewportMinor: Math.min(metrics.viewportWidth, metrics.viewportHeight)
+    };
+  }
+
   function hasMobileViewportOverlay() {
     if (!isLikelyMobilePlayback()) return false;
     var metrics = getMobileViewportMetrics();
@@ -555,21 +565,14 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
       return true;
     }
     if (!mobileSecureViewportSnapshot) return false;
-
-    var baselineLayoutMajor = Math.max(mobileSecureViewportSnapshot.layoutWidth, mobileSecureViewportSnapshot.layoutHeight);
-    var baselineLayoutMinor = Math.min(mobileSecureViewportSnapshot.layoutWidth, mobileSecureViewportSnapshot.layoutHeight);
-    var currentLayoutMajor = Math.max(metrics.layoutWidth, metrics.layoutHeight);
-    var currentLayoutMinor = Math.min(metrics.layoutWidth, metrics.layoutHeight);
-    var baselineViewportMajor = Math.max(mobileSecureViewportSnapshot.viewportWidth, mobileSecureViewportSnapshot.viewportHeight);
-    var baselineViewportMinor = Math.min(mobileSecureViewportSnapshot.viewportWidth, mobileSecureViewportSnapshot.viewportHeight);
-    var currentViewportMajor = Math.max(metrics.viewportWidth, metrics.viewportHeight);
-    var currentViewportMinor = Math.min(metrics.viewportWidth, metrics.viewportHeight);
+    var baselineDimensions = getViewportMajorMinorDimensions(mobileSecureViewportSnapshot);
+    var currentDimensions = getViewportMajorMinorDimensions(metrics);
 
     return (
-      baselineLayoutMajor - currentLayoutMajor > mobileViewportBaselineShrinkThresholdPx ||
-      baselineLayoutMinor - currentLayoutMinor > mobileViewportBaselineShrinkThresholdPx ||
-      baselineViewportMajor - currentViewportMajor > mobileViewportBaselineShrinkThresholdPx ||
-      baselineViewportMinor - currentViewportMinor > mobileViewportBaselineShrinkThresholdPx
+      baselineDimensions.layoutMajor - currentDimensions.layoutMajor > mobileViewportBaselineShrinkThresholdPx ||
+      baselineDimensions.layoutMinor - currentDimensions.layoutMinor > mobileViewportBaselineShrinkThresholdPx ||
+      baselineDimensions.viewportMajor - currentDimensions.viewportMajor > mobileViewportBaselineShrinkThresholdPx ||
+      baselineDimensions.viewportMinor - currentDimensions.viewportMinor > mobileViewportBaselineShrinkThresholdPx
     );
   }
 
@@ -1385,6 +1388,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   });
   function handleMobileSecureStateViewportChange() {
     if (protectedPageClosed || videoState.isBlocked || !playbackBootstrapped || !isLikelyMobilePlayback()) return;
+    // Lock immediately on overlay detection so the video never stays visible during the debounce window.
     if (hasMobileViewportOverlay()) setCaptureShieldLocked(mobileSecureStateShieldMessage);
     window.clearTimeout(mobileSecureStateResizeHandle);
     mobileSecureStateResizeHandle = window.setTimeout(function(){
