@@ -516,12 +516,18 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   function hasMobileViewportOverlay() {
     if (!isLikelyMobilePlayback() || !window.visualViewport) return false;
     var viewport = window.visualViewport;
-    var layoutWidth = window.innerWidth || 0;
-    var layoutHeight = window.innerHeight || 0;
-    var widthGap = Math.abs(layoutWidth - (viewport.width || 0));
-    var heightGap = Math.abs(layoutHeight - (viewport.height || 0));
-    var offsetTop = Math.abs(viewport.offsetTop || 0);
-    var offsetLeft = Math.abs(viewport.offsetLeft || 0);
+    var layoutWidth = parseFloat(window.innerWidth || 0);
+    var layoutHeight = parseFloat(window.innerHeight || 0);
+    var viewportWidth = parseFloat(viewport.width || 0);
+    var viewportHeight = parseFloat(viewport.height || 0);
+    var widthGap = layoutWidth > 0 && viewportWidth > 0
+      ? Math.abs(layoutWidth - viewportWidth)
+      : 0;
+    var heightGap = layoutHeight > 0 && viewportHeight > 0
+      ? Math.abs(layoutHeight - viewportHeight)
+      : 0;
+    var offsetTop = Math.max(0, parseFloat(viewport.offsetTop || 0));
+    var offsetLeft = Math.max(0, parseFloat(viewport.offsetLeft || 0));
 
     return widthGap > mobileViewportOverlayThresholdPx ||
       heightGap > mobileViewportOverlayThresholdPx ||
