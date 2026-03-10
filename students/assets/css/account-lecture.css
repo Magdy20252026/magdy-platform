@@ -353,6 +353,8 @@
 .acc-platformControls__iconBtn:disabled{
   opacity: .62;
   box-shadow: none;
+  transform: none;
+  filter: none;
 }
 
 .acc-viewerFrameShell .acc-playerStage .acc-platformControls{
@@ -444,7 +446,7 @@
   text-align: center;
   padding: 22px;
   color: rgba(255,255,255,.92);
-  font-weight: 1000;
+  font-weight: 900;
   letter-spacing: .01em;
   line-height: 1.8;
   background: rgba(0,0,0,.95);

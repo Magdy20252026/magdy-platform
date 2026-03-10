@@ -211,7 +211,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
             </select>
           </div>
         </div>
-        <div class="acc-captureShield" id="lectureCaptureShield" aria-hidden="true">
+        <div class="acc-captureShield" id="lectureCaptureShield" role="status" aria-live="polite">
           ⚫️ تم تعتيم المشغل لحماية المحتوى أثناء محاولة تصوير الشاشة.
         </div>
       </div>
@@ -949,14 +949,10 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   document.addEventListener('contextmenu', function(e){ e.preventDefault(); });
   document.addEventListener('mousedown', function(e){ if (e.button === 2) e.preventDefault(); }, true);
   document.addEventListener('keydown', function(e){
-    var captureKey = String(e.key || '').toLowerCase();
-    if (captureKey === 'printscreen' || (e.metaKey && e.shiftKey && (captureKey === '3' || captureKey === '4' || captureKey === '5'))) {
+    var key = String(e.key || '').toLowerCase();
+    if (key === 'printscreen' || (e.metaKey && e.shiftKey && (key === '3' || key === '4' || key === '5'))) {
       triggerCaptureShield('⚫️ تم تعتيم المشغل لحماية المحتوى أثناء محاولة تصوير الشاشة.');
     }
-  }, true);
-
-  document.addEventListener('keydown', function(e){
-    var key = String(e.key || '').toLowerCase();
     var blocked =
       key === 'f12' ||
       (e.ctrlKey && e.shiftKey && (key === 'i' || key === 'j' || key === 'c')) ||
