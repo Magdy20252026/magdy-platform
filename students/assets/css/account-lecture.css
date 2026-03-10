@@ -595,7 +595,7 @@
 
 @media (max-width: 640px){
   .acc-viewerFrameShell .acc-playerStage{
-    min-height: auto;
+    min-height: 0;
   }
 
   .acc-viewerFrameShell .acc-playerSurface{
