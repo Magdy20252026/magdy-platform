@@ -265,6 +265,17 @@ function student_normalize_video_src(string $src, string $videoType, string $ori
   if (!in_array($scheme, ['http', 'https'], true)) return '';
 
   if ($videoType === 'youtube') {
+    $host = strtolower((string)($parts['host'] ?? ''));
+    $path = trim((string)($parts['path'] ?? ''), '/');
+    $segments = $path === '' ? [] : explode('/', $path);
+    if (
+      (strpos($host, 'youtube.com') !== false || strpos($host, 'youtube-nocookie.com') !== false) &&
+      !empty($segments[0]) &&
+      $segments[0] === 'embed'
+    ) {
+      return $src;
+    }
+
     $videoId = student_extract_youtube_video_id($src);
     if ($videoId === '') return '';
 
@@ -273,11 +284,9 @@ function student_normalize_video_src(string $src, string $videoType, string $ori
       'rel' => 0,
       'modestbranding' => 1,
       'playsinline' => 1,
-      'enablejsapi' => 1,
       'iv_load_policy' => 3,
       'fs' => 0,
     ];
-    if ($origin !== '') $params['origin'] = $origin;
     return student_append_url_params($embed, $params);
   }
 
