@@ -217,11 +217,57 @@ function student_assessment_fetch_latest_attempt(PDO $pdo, string $type, int $as
   }
 }
 
+function student_assessment_resolve_duration_minutes(int $attemptDurationMinutes, int $assessmentDurationMinutes): int {
+  if ($attemptDurationMinutes > 0) return $attemptDurationMinutes;
+  if ($assessmentDurationMinutes > 0) return $assessmentDurationMinutes;
+  return 1;
+}
+
+function student_assessment_normalize_attempt_timing(PDO $pdo, string $type, int $studentId, ?int $attemptId = null): void {
+  $cfg = student_assessment_type_config($type);
+  if (!$cfg || $studentId <= 0) return;
+
+  student_assessment_ensure_attempt_tables($pdo);
+
+  $sql = "
+    UPDATE {$cfg['attempt_table']} att
+    INNER JOIN {$cfg['assessment_table']} a
+      ON a.{$cfg['assessment_pk']} = att.{$cfg['attempt_fk']}
+    SET
+      att.started_at = COALESCE(att.started_at, NOW()),
+      att.duration_minutes = CASE
+        WHEN att.duration_minutes > 0 THEN att.duration_minutes
+        WHEN a.duration_minutes > 0 THEN a.duration_minutes
+        ELSE 1
+      END
+    WHERE att.student_id = ?
+      AND att.status = 'in_progress'
+      AND (
+        att.started_at IS NULL
+        OR att.duration_minutes <= 0
+      )
+  ";
+
+  $params = [$studentId];
+  if ($attemptId !== null && $attemptId > 0) {
+    $sql .= " AND att.id = ?";
+    $params[] = $attemptId;
+  }
+
+  try {
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($params);
+  } catch (Throwable $e) {
+    error_log('Failed to normalize assessment timing: ' . $e->getMessage());
+  }
+}
+
 function student_assessment_expire_stale_attempts(PDO $pdo, string $type, int $studentId): void {
   $cfg = student_assessment_type_config($type);
   if (!$cfg || $studentId <= 0) return;
 
   student_assessment_ensure_attempt_tables($pdo);
+  student_assessment_normalize_attempt_timing($pdo, $type, $studentId);
 
   $sql = "
     UPDATE {$cfg['attempt_table']}
@@ -416,6 +462,8 @@ function student_assessment_create_attempt(PDO $pdo, int $studentId, int $gradeI
     $maxScore += (float)($question['degree'] ?? 0);
   }
 
+  $attemptDurationMinutes = max(1, (int)($item['duration_minutes'] ?? 0));
+
   try {
     $pdo->beginTransaction();
 
@@ -428,7 +476,7 @@ function student_assessment_create_attempt(PDO $pdo, int $studentId, int $gradeI
     $stmt->execute([
       $assessmentId,
       $studentId,
-      (int)($item['duration_minutes'] ?? 0),
+      $attemptDurationMinutes,
       $maxScore,
     ]);
 
@@ -461,6 +509,7 @@ function student_assessment_fetch_attempt_payload(PDO $pdo, string $type, int $a
   if (!$cfg || $attemptId <= 0 || $studentId <= 0) return null;
 
   student_assessment_ensure_attempt_tables($pdo);
+  student_assessment_normalize_attempt_timing($pdo, $type, $studentId, $attemptId);
 
   try {
     $stmt = $pdo->prepare("
@@ -576,7 +625,8 @@ function student_assessment_fetch_attempt_payload(PDO $pdo, string $type, int $a
     $assessmentDurationMinutes = (int)($attempt['assessment_duration_minutes'] ?? 0);
     $startedAtTs = strtotime($startedAt);
     $shouldResetStartedAt = ($attemptStatus === 'in_progress' && ($startedAt === '' || $startedAtTs === false));
-    $shouldResetDuration = ($attemptStatus === 'in_progress' && $durationMinutes <= 0 && $assessmentDurationMinutes > 0);
+    $resolvedDurationMinutes = student_assessment_resolve_duration_minutes($durationMinutes, $assessmentDurationMinutes);
+    $shouldResetDuration = ($attemptStatus === 'in_progress' && $durationMinutes !== $resolvedDurationMinutes);
 
     if ($shouldResetStartedAt) {
       $startedAt = date('Y-m-d H:i:s');
@@ -584,7 +634,7 @@ function student_assessment_fetch_attempt_payload(PDO $pdo, string $type, int $a
       $startedAtTs = strtotime($startedAt);
     }
     if ($shouldResetDuration) {
-      $durationMinutes = $assessmentDurationMinutes;
+      $durationMinutes = $resolvedDurationMinutes;
       $attempt['duration_minutes'] = $durationMinutes;
     }
     if ($shouldResetStartedAt || $shouldResetDuration) {

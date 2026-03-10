@@ -16,6 +16,13 @@ function fmt_dt(?string $dt): string {
   return $dt !== '' ? $dt : '—';
 }
 
+function fmt_timer(int $seconds): string {
+  $seconds = max(0, $seconds);
+  $minutes = (int)floor($seconds / 60);
+  $secs = $seconds % 60;
+  return sprintf('%02d:%02d', $minutes, $secs);
+}
+
 $settingsRow = get_platform_settings_row($pdo);
 $platformName = trim((string)($settingsRow['platform_name'] ?? 'منصتي التعليمية'));
 if ($platformName === '') $platformName = 'منصتي التعليمية';
@@ -119,7 +126,12 @@ $isFinished = (bool)($payload['is_finished'] ?? false);
 $questions = (array)($payload['questions'] ?? []);
 $attemptRow = (array)($payload['attempt'] ?? []);
 $remainingSeconds = (int)($payload['remaining_seconds'] ?? 0);
-$remainingMinutes = (int)ceil(max(0, $remainingSeconds) / 60);
+$finishedTimerLabel = '✅ تم التسليم';
+if ((string)($attemptRow['status'] ?? '') === 'expired') {
+  $finishedTimerLabel = '⏱️ انتهى الوقت';
+} elseif ((string)($attemptRow['status'] ?? '') === 'in_progress') {
+  $finishedTimerLabel = '⏱️ المتبقي: ' . fmt_timer($remainingSeconds);
+}
 $backHref = 'account.php?page=' . rawurlencode((string)($config['page'] ?? 'home'));
 $pageTitle = $config ? ($config['label'] . ' - ' . $platformName) : ('المحتوى - ' . $platformName);
 ?>
@@ -211,9 +223,9 @@ $pageTitle = $config ? ($config['label'] . ' - ' . $platformName) : ('المحت
             </span>
             <span class="timer-pill" id="assessmentTimer">
               <?php if ($isFinished): ?>
-                ⏱️ انتهى الوقت
+                <?php echo h($finishedTimerLabel); ?>
               <?php else: ?>
-                <?php echo $remainingMinutes > 0 ? ('⏱️ المتبقي: ' . $remainingMinutes . ' دقيقة') : '⏱️ أقل من دقيقة'; ?>
+                <?php echo '⏱️ المتبقي: ' . h(fmt_timer($remainingSeconds)); ?>
               <?php endif; ?>
             </span>
           </div>
@@ -423,11 +435,15 @@ $pageTitle = $config ? ($config['label'] . ' - ' . $platformName) : ('المحت
     const remainingSeconds = <?php echo (int)$remainingSeconds; ?>;
     let left = Math.max(0, remainingSeconds);
 
+    function formatTime(totalSeconds) {
+      const safeSeconds = Math.max(0, totalSeconds);
+      const minutes = String(Math.floor(safeSeconds / 60)).padStart(2, '0');
+      const seconds = String(safeSeconds % 60).padStart(2, '0');
+      return minutes + ':' + seconds;
+    }
+
     function renderTimer() {
-      const minutesLeft = Math.ceil(left / 60);
-      timerEl.textContent = minutesLeft > 0
-        ? ('⏱️ المتبقي: ' + minutesLeft + ' دقيقة')
-        : '⏱️ أقل من دقيقة';
+      timerEl.textContent = '⏱️ المتبقي: ' + formatTime(left);
     }
 
     function tick() {
