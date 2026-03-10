@@ -4,9 +4,11 @@ require_once __DIR__ . '/inc/platform_settings.php';
 require __DIR__ . '/inc/student_auth.php';
 require_once __DIR__ . '/../admin/inc/wallet_transactions.php';
 require_once __DIR__ . '/inc/assessments.php';
+require __DIR__ . '/../inc/platform_features.php';
 
 no_cache_headers();
 student_require_login();
+platform_features_ensure_tables($pdo);
 
 if (!function_exists('h')) {
   function h(string $v): string { return htmlspecialchars($v, ENT_QUOTES, 'UTF-8'); }
@@ -127,7 +129,7 @@ try {
 
 /* navigation */
 $page = (string)($_GET['page'] ?? 'home');
-$allowedPages = ['home','settings','platform_courses','my_courses','wallet','notifications','assignments','exams'];
+$allowedPages = ['home','settings','platform_courses','my_courses','wallet','notifications','assignments','exams','facebook','chat'];
 if (!in_array($page, $allowedPages, true)) $page = 'home';
 
 /* sidebar items */
@@ -140,8 +142,8 @@ $sidebar = [
   ['key'=>'assignments', 'label'=>'الواجبات', 'icon'=>'📝', 'href'=>'account.php?page=assignments'],
   ['key'=>'exams', 'label'=>'الامتحانات', 'icon'=>'🧠', 'href'=>'account.php?page=exams'],
   ['key'=>'notifications', 'label'=>'اشعارات الطلاب', 'icon'=>'🔔', 'href'=>'account.php?page=notifications'],
-  ['key'=>'facebook', 'label'=>'فيسبوك المنصة', 'icon'=>'📘', 'href'=>'#', 'disabled'=>true],
-  ['key'=>'chat', 'label'=>'شات', 'icon'=>'💬', 'href'=>'#', 'disabled'=>true],
+  ['key'=>'facebook', 'label'=>'فيسبوك المنصة', 'icon'=>'📘', 'href'=>'account.php?page=facebook'],
+  ['key'=>'chat', 'label'=>'شات', 'icon'=>'💬', 'href'=>'account.php?page=chat'],
   ['key'=>'wallet', 'label'=>'المحفظة', 'icon'=>'💳', 'href'=>'account.php?page=wallet'],
 
   ['key'=>'settings', 'label'=>'إعدادات الحساب', 'icon'=>'⚙️', 'href'=>'account.php?page=settings'],
@@ -255,6 +257,122 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['action'] ?? '') ==
 }
 
 if (isset($_GET['saved'])) $success = 'تم حفظ بيانات الحساب بنجاح.';
+
+$reactionTypes = [
+  'like'  => '👍 إعجاب',
+  'love'  => '❤️ حب',
+  'care'  => '🤗 دعم',
+  'wow'   => '😮 واو',
+  'haha'  => '😂 هاها',
+  'sad'   => '😢 حزين',
+  'angry' => '😡 غاضب',
+];
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+  $action = (string)($_POST['action'] ?? '');
+
+  if ($action === 'react_post') {
+    $postId = (int)($_POST['post_id'] ?? 0);
+    $reactionType = (string)($_POST['reaction_type'] ?? 'like');
+    if ($postId <= 0 || !isset($reactionTypes[$reactionType])) {
+      $error = 'التفاعل المطلوب غير صالح.';
+    } else {
+      try {
+        $stmt = $pdo->prepare("INSERT INTO platform_post_reactions (post_id, student_id, reaction_type) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE reaction_type=VALUES(reaction_type), updated_at=CURRENT_TIMESTAMP");
+        $stmt->execute([$postId, $studentId, $reactionType]);
+        header('Location: account.php?page=facebook#post-' . $postId);
+        exit;
+      } catch (Throwable $e) {
+        $error = 'تعذر تسجيل التفاعل الآن.';
+      }
+    }
+  } elseif ($action === 'clear_post_reaction') {
+    $postId = (int)($_POST['post_id'] ?? 0);
+    if ($postId > 0) {
+      try {
+        $stmt = $pdo->prepare("DELETE FROM platform_post_reactions WHERE post_id=? AND student_id=?");
+        $stmt->execute([$postId, $studentId]);
+        header('Location: account.php?page=facebook#post-' . $postId);
+        exit;
+      } catch (Throwable $e) {
+        $error = 'تعذر حذف التفاعل الآن.';
+      }
+    }
+  } elseif ($action === 'comment_post') {
+    $postId = (int)($_POST['post_id'] ?? 0);
+    $commentText = trim((string)($_POST['comment_text'] ?? ''));
+    if ($postId <= 0 || $commentText === '') {
+      $error = 'اكتب التعليق أولاً.';
+    } else {
+      try {
+        $stmt = $pdo->prepare("INSERT INTO platform_post_comments (post_id, student_id, comment_text) VALUES (?, ?, ?)");
+        $stmt->execute([$postId, $studentId, $commentText]);
+        header('Location: account.php?page=facebook#post-' . $postId);
+        exit;
+      } catch (Throwable $e) {
+        $error = 'تعذر إضافة التعليق حالياً.';
+      }
+    }
+  } elseif ($action === 'start_chat') {
+    $adminId = (int)($_POST['admin_id'] ?? 0);
+    $messageText = trim((string)($_POST['message_text'] ?? ''));
+    if ($adminId <= 0 || $messageText === '') {
+      $error = 'اختر شخصًا من الإدارة واكتب الرسالة الأولى.';
+    } else {
+      try {
+        $stmt = $pdo->prepare("
+          SELECT a.id
+          FROM admins a
+          INNER JOIN admin_chat_profiles p ON p.admin_id = a.id
+          WHERE a.id = ? AND a.is_active = 1 AND p.is_online = 1
+          LIMIT 1
+        ");
+        $stmt->execute([$adminId]);
+        $onlineAdmin = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+        if (!$onlineAdmin) {
+          $error = 'لا يمكن بدء المحادثة إلا مع شخص من الإدارة في وضع أونلاين.';
+        } else {
+          $stmt = $pdo->prepare("
+            INSERT INTO student_chat_conversations (student_id, admin_id)
+            VALUES (?, ?)
+            ON DUPLICATE KEY UPDATE updated_at = CURRENT_TIMESTAMP, id = LAST_INSERT_ID(id)
+          ");
+          $stmt->execute([$studentId, $adminId]);
+          $conversationId = (int)$pdo->lastInsertId();
+          $stmt = $pdo->prepare("INSERT INTO student_chat_messages (conversation_id, sender_type, sender_id, message_text, is_read) VALUES (?, 'student', ?, ?, 0)");
+          $stmt->execute([$conversationId, $studentId, $messageText]);
+          $pdo->prepare("UPDATE student_chat_conversations SET updated_at = NOW() WHERE id=?")->execute([$conversationId]);
+          header('Location: account.php?page=chat&chat_id=' . $conversationId);
+          exit;
+        }
+      } catch (Throwable $e) {
+        $error = 'تعذر بدء المحادثة الآن.';
+      }
+    }
+  } elseif ($action === 'reply_chat') {
+    $conversationId = (int)($_POST['conversation_id'] ?? 0);
+    $messageText = trim((string)($_POST['message_text'] ?? ''));
+    if ($conversationId <= 0 || $messageText === '') {
+      $error = 'اكتب الرسالة أولاً.';
+    } else {
+      try {
+        $stmt = $pdo->prepare("SELECT id FROM student_chat_conversations WHERE id=? AND student_id=? LIMIT 1");
+        $stmt->execute([$conversationId, $studentId]);
+        if (!$stmt->fetch()) {
+          $error = 'المحادثة غير متاحة لك.';
+        } else {
+          $stmt = $pdo->prepare("INSERT INTO student_chat_messages (conversation_id, sender_type, sender_id, message_text, is_read) VALUES (?, 'student', ?, ?, 0)");
+          $stmt->execute([$conversationId, $studentId, $messageText]);
+          $pdo->prepare("UPDATE student_chat_conversations SET updated_at = NOW() WHERE id=?")->execute([$conversationId]);
+          header('Location: account.php?page=chat&chat_id=' . $conversationId);
+          exit;
+        }
+      } catch (Throwable $e) {
+        $error = 'تعذر إرسال الرسالة حالياً.';
+      }
+    }
+  }
+}
 
 /* =========================
    Platform courses (NOT enrolled)
@@ -502,6 +620,141 @@ try {
   $studentUnreadNotifications = 0;
 }
 
+$platformPosts = [];
+$platformPostReactionSummary = [];
+$platformCommentsByPost = [];
+$platformRepliesByParent = [];
+$studentPostReactions = [];
+try {
+  $platformPosts = $pdo->query("
+    SELECT p.*, COALESCE(a.username, 'الإدارة') AS admin_name,
+           (SELECT COUNT(*) FROM platform_post_reactions r WHERE r.post_id = p.id) AS reactions_total,
+           (SELECT COUNT(*) FROM platform_post_comments c WHERE c.post_id = p.id AND c.parent_comment_id IS NULL) AS comments_total
+    FROM platform_posts p
+    LEFT JOIN admins a ON a.id = p.admin_id
+    WHERE p.is_active = 1
+    ORDER BY p.id DESC
+    LIMIT 30
+  ")->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+  $postIds = array_values(array_map(fn($post) => (int)$post['id'], $platformPosts));
+  if ($postIds) {
+    $in = implode(',', array_fill(0, count($postIds), '?'));
+
+    $stmt = $pdo->prepare("
+      SELECT post_id, reaction_type, COUNT(*) AS c
+      FROM platform_post_reactions
+      WHERE post_id IN ($in)
+      GROUP BY post_id, reaction_type
+    ");
+    $stmt->execute($postIds);
+    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) ?: [] as $reactionRow) {
+      $pid = (int)$reactionRow['post_id'];
+      if (!isset($platformPostReactionSummary[$pid])) $platformPostReactionSummary[$pid] = [];
+      $platformPostReactionSummary[$pid][(string)$reactionRow['reaction_type']] = (int)$reactionRow['c'];
+    }
+
+    $stmt = $pdo->prepare("
+      SELECT post_id, reaction_type
+      FROM platform_post_reactions
+      WHERE post_id IN ($in) AND student_id = ?
+    ");
+    $params = $postIds;
+    $params[] = $studentId;
+    $stmt->execute($params);
+    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) ?: [] as $studentReactionRow) {
+      $studentPostReactions[(int)$studentReactionRow['post_id']] = (string)$studentReactionRow['reaction_type'];
+    }
+
+    $stmt = $pdo->prepare("
+      SELECT c.*, s.full_name AS student_name, COALESCE(p.display_name, a.username, 'الإدارة') AS admin_name
+      FROM platform_post_comments c
+      LEFT JOIN students s ON s.id = c.student_id
+      LEFT JOIN admins a ON a.id = c.admin_id
+      LEFT JOIN admin_chat_profiles p ON p.admin_id = c.admin_id
+      WHERE c.post_id IN ($in)
+      ORDER BY c.id ASC
+    ");
+    $stmt->execute($postIds);
+    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) ?: [] as $commentRow) {
+      $parentId = (int)($commentRow['parent_comment_id'] ?? 0);
+      $postId = (int)$commentRow['post_id'];
+      if ($parentId > 0) {
+        if (!isset($platformRepliesByParent[$parentId])) $platformRepliesByParent[$parentId] = [];
+        $platformRepliesByParent[$parentId][] = $commentRow;
+      } else {
+        if (!isset($platformCommentsByPost[$postId])) $platformCommentsByPost[$postId] = [];
+        $platformCommentsByPost[$postId][] = $commentRow;
+      }
+    }
+  }
+} catch (Throwable $e) {
+  $platformPosts = [];
+  $platformPostReactionSummary = [];
+  $platformCommentsByPost = [];
+  $platformRepliesByParent = [];
+  $studentPostReactions = [];
+}
+
+$onlineAdmins = [];
+$studentConversations = [];
+$selectedConversationId = (int)($_GET['chat_id'] ?? 0);
+$selectedConversation = null;
+$conversationMessages = [];
+try {
+  $onlineAdmins = $pdo->query("
+    SELECT a.id, COALESCE(p.display_name, a.username) AS display_name, p.image_path, p.updated_at
+    FROM admins a
+    INNER JOIN admin_chat_profiles p ON p.admin_id = a.id
+    WHERE a.is_active = 1 AND p.is_online = 1
+    ORDER BY p.updated_at DESC, a.id DESC
+  ")->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+  $stmt = $pdo->prepare("
+    SELECT c.id, c.updated_at, c.admin_id,
+           COALESCE(p.display_name, a.username) AS display_name,
+           p.image_path,
+           (SELECT message_text FROM student_chat_messages m WHERE m.conversation_id = c.id ORDER BY m.id DESC LIMIT 1) AS last_message,
+           (SELECT COUNT(*) FROM student_chat_messages m2 WHERE m2.conversation_id = c.id AND m2.sender_type = 'admin' AND m2.is_read = 0) AS unread_count
+    FROM student_chat_conversations c
+    INNER JOIN admins a ON a.id = c.admin_id
+    LEFT JOIN admin_chat_profiles p ON p.admin_id = a.id
+    WHERE c.student_id = ?
+    ORDER BY c.updated_at DESC, c.id DESC
+  ");
+  $stmt->execute([$studentId]);
+  $studentConversations = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+  if ($selectedConversationId <= 0 && !empty($studentConversations)) {
+    $selectedConversationId = (int)$studentConversations[0]['id'];
+  }
+
+  if ($selectedConversationId > 0) {
+    $stmt = $pdo->prepare("
+      SELECT c.*, COALESCE(p.display_name, a.username) AS display_name, p.image_path, p.is_online
+      FROM student_chat_conversations c
+      INNER JOIN admins a ON a.id = c.admin_id
+      LEFT JOIN admin_chat_profiles p ON p.admin_id = a.id
+      WHERE c.id = ? AND c.student_id = ?
+      LIMIT 1
+    ");
+    $stmt->execute([$selectedConversationId, $studentId]);
+    $selectedConversation = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+
+    if ($selectedConversation) {
+      $pdo->prepare("UPDATE student_chat_messages SET is_read = 1 WHERE conversation_id=? AND sender_type='admin'")->execute([$selectedConversationId]);
+      $stmt = $pdo->prepare("SELECT * FROM student_chat_messages WHERE conversation_id=? ORDER BY id ASC");
+      $stmt->execute([$selectedConversationId]);
+      $conversationMessages = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    }
+  }
+} catch (Throwable $e) {
+  $onlineAdmins = [];
+  $studentConversations = [];
+  $selectedConversation = null;
+  $conversationMessages = [];
+}
+
 $assignmentCards = [];
 $examCards = [];
 try {
@@ -681,7 +934,39 @@ if ($cssVer === '' || $cssVer === '0') $cssVer = (string)time();
     .acc-assess-card__actions{margin-top:14px;display:flex;gap:10px;flex-wrap:wrap}
     .acc-assess-empty{padding:18px;border:1px dashed var(--border);border-radius:16px;color:var(--muted);font-weight:900;line-height:1.9;background:rgba(0,0,0,.02)}
     .acc-assess-summary{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px}
-    @media (max-width: 980px){ .acc-assess-grid{grid-template-columns:1fr;} }
+    .acc-feed{display:grid;gap:16px}
+    .acc-feedCard,.acc-chatCard{background:var(--card-bg);border:1px solid var(--border);border-radius:18px;padding:18px;box-shadow:0 12px 24px rgba(0,0,0,.06)}
+    .acc-feedHead{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap}
+    .acc-feedBody{margin-top:14px;line-height:2;white-space:pre-wrap;font-weight:800}
+    .acc-feedImage{margin-top:14px;border-radius:16px;overflow:hidden;border:1px solid var(--border)}
+    .acc-feedImage img{display:block;width:100%;max-height:420px;object-fit:cover}
+    .acc-feedStats{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+    .acc-reactions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+    .acc-reactionBtn{border:none;border-radius:999px;padding:10px 14px;font:inherit;font-weight:1000;cursor:pointer;background:rgba(59,130,246,.1);color:var(--text)}
+    .acc-reactionBtn.is-active{background:rgba(34,197,94,.15);color:#166534}
+    .acc-commentForm textarea,.acc-chatSend textarea{width:100%;min-height:100px;border:1px solid var(--border);border-radius:16px;padding:14px;background:var(--card-bg);color:var(--text);font:inherit}
+    .acc-comments{display:grid;gap:12px;margin-top:14px}
+    .acc-comment{padding:14px;border-radius:16px;background:rgba(15,23,42,.04);border:1px solid var(--border)}
+    .acc-commentReply{margin-top:10px;margin-right:18px;padding:12px;border-radius:14px;background:rgba(34,197,94,.08);border:1px dashed rgba(34,197,94,.35)}
+    .acc-chatLayout{display:grid;grid-template-columns:320px 1fr;gap:16px}
+    .acc-chatSidebar{display:grid;gap:16px}
+    .acc-chatList{display:grid;gap:12px}
+    .acc-chatItem{display:block;text-decoration:none;color:inherit;padding:14px;border-radius:16px;border:1px solid var(--border);background:rgba(15,23,42,.04)}
+    .acc-chatItem.is-active{border-color:var(--accent);background:rgba(59,130,246,.08)}
+    .acc-chatMsgs{display:grid;gap:12px;max-height:520px;overflow:auto}
+    .acc-chatMsg{max-width:82%;padding:14px 16px;border-radius:18px;border:1px solid var(--border);font-weight:800;line-height:1.9}
+    .acc-chatMsg--student{background:rgba(59,130,246,.08);margin-right:auto}
+    .acc-chatMsg--admin{background:rgba(34,197,94,.08);margin-left:auto}
+    .acc-chatMeta{color:var(--muted);font-weight:900;font-size:.92rem}
+    .acc-unread{display:inline-flex;align-items:center;justify-content:center;min-width:28px;height:28px;border-radius:999px;background:#ef4444;color:#fff;padding:0 10px;font-size:.85rem;font-weight:1000}
+    .acc-emptyBox{padding:18px;border:1px dashed var(--border);border-radius:16px;color:var(--muted);font-weight:900;line-height:1.9;background:rgba(0,0,0,.02)}
+    .acc-onlinePill{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:8px 12px;background:rgba(34,197,94,.12);font-weight:1000;color:#166534}
+    .acc-avatar{width:46px;height:46px;border-radius:50%;object-fit:cover;border:1px solid var(--border)}
+    .acc-chatUser{display:flex;gap:10px;align-items:center}
+    .acc-chip{display:inline-flex;align-items:center;gap:6px;padding:8px 12px;border-radius:999px;background:rgba(59,130,246,.08);font-weight:1000}
+    .acc-commentForm{margin-top:12px;display:grid;gap:10px}
+    .acc-chatSend{margin-top:14px;display:grid;gap:10px}
+    @media (max-width: 980px){ .acc-assess-grid{grid-template-columns:1fr;} .acc-chatLayout{grid-template-columns:1fr;} }
   </style>
 
   <title>حساب الطالب - <?php echo h($platformName); ?></title>
@@ -757,6 +1042,8 @@ if ($cssVer === '' || $cssVer === '0') $cssVer = (string)time();
           if (($it['key'] ?? '') === 'assignments' && $page === 'assignments') $isActive = true;
           if (($it['key'] ?? '') === 'exams' && $page === 'exams') $isActive = true;
           if (($it['key'] ?? '') === 'notifications' && $page === 'notifications') $isActive = true;
+          if (($it['key'] ?? '') === 'facebook' && $page === 'facebook') $isActive = true;
+          if (($it['key'] ?? '') === 'chat' && $page === 'chat') $isActive = true;
           if (($it['key'] ?? '') === 'wallet' && $page === 'wallet') $isActive = true;
 
           $cls = 'acc-nav__item';
@@ -1077,6 +1364,203 @@ if ($cssVer === '' || $cssVer === '0') $cssVer = (string)time();
               <?php endforeach; ?>
             </div>
           <?php endif; ?>
+        </section>
+
+      <?php elseif ($page === 'facebook'): ?>
+        <section class="acc-card" aria-label="فيسبوك المنصة">
+          <div class="acc-card__head">
+            <h2>📘 فيسبوك المنصة</h2>
+            <p>تابع منشورات الإدارة، أضف رياكت مثل الفيسبوك، واكتب تعليقك لتتلقى رد الإدارة عليه.</p>
+          </div>
+
+          <?php if (empty($platformPosts)): ?>
+            <div class="acc-emptyBox">لا توجد منشورات حالياً.</div>
+          <?php else: ?>
+            <div class="acc-feed">
+              <?php foreach ($platformPosts as $post): ?>
+                <?php
+                  $postId = (int)$post['id'];
+                  $postImage = trim((string)($post['image_path'] ?? ''));
+                  $currentReaction = (string)($studentPostReactions[$postId] ?? '');
+                ?>
+                <article class="acc-feedCard" id="post-<?php echo $postId; ?>">
+                  <div class="acc-feedHead">
+                    <div>
+                      <div style="font-weight:1000;font-size:1.06rem;">👨‍🏫 <?php echo h((string)$post['admin_name']); ?></div>
+                      <div class="acc-chatMeta">🗓️ <?php echo h((string)($post['created_at'] ?? '')); ?></div>
+                    </div>
+                    <?php if ($currentReaction !== ''): ?>
+                      <span class="acc-onlinePill">تفاعلك الحالي: <?php echo h((string)$reactionTypes[$currentReaction]); ?></span>
+                    <?php endif; ?>
+                  </div>
+
+                  <?php if (trim((string)($post['body'] ?? '')) !== ''): ?><div class="acc-feedBody"><?php echo nl2br(h((string)$post['body'])); ?></div><?php endif; ?>
+                  <?php if ($postImage !== ''): ?><div class="acc-feedImage"><img src="<?php echo h('../admin/' . ltrim($postImage, '/')); ?>" alt="صورة المنشور"></div><?php endif; ?>
+
+                  <div class="acc-feedStats">
+                    <span class="acc-chip">❤️ إجمالي التفاعلات: <?php echo (int)($post['reactions_total'] ?? 0); ?></span>
+                    <span class="acc-chip">💬 التعليقات: <?php echo (int)($post['comments_total'] ?? 0); ?></span>
+                    <?php foreach (($platformPostReactionSummary[$postId] ?? []) as $reactionKey => $reactionCount): ?>
+                      <span class="acc-chip"><?php echo h((string)$reactionTypes[$reactionKey]); ?>: <?php echo (int)$reactionCount; ?></span>
+                    <?php endforeach; ?>
+                  </div>
+
+                  <div class="acc-reactions">
+                    <?php foreach ($reactionTypes as $reactionKey => $reactionLabel): ?>
+                      <form method="post">
+                        <input type="hidden" name="action" value="react_post">
+                        <input type="hidden" name="post_id" value="<?php echo $postId; ?>">
+                        <input type="hidden" name="reaction_type" value="<?php echo h($reactionKey); ?>">
+                        <button class="acc-reactionBtn <?php echo $currentReaction === $reactionKey ? 'is-active' : ''; ?>" type="submit"><?php echo h($reactionLabel); ?></button>
+                      </form>
+                    <?php endforeach; ?>
+                    <?php if ($currentReaction !== ''): ?>
+                      <form method="post">
+                        <input type="hidden" name="action" value="clear_post_reaction">
+                        <input type="hidden" name="post_id" value="<?php echo $postId; ?>">
+                        <button class="acc-reactionBtn" type="submit">➖ إزالة التفاعل</button>
+                      </form>
+                    <?php endif; ?>
+                  </div>
+
+                  <form method="post" class="acc-commentForm">
+                    <input type="hidden" name="action" value="comment_post">
+                    <input type="hidden" name="post_id" value="<?php echo $postId; ?>">
+                    <textarea name="comment_text" placeholder="اكتب تعليقك هنا..."></textarea>
+                    <button class="acc-btn" type="submit">💬 إضافة تعليق</button>
+                  </form>
+
+                  <div class="acc-comments">
+                    <?php foreach (($platformCommentsByPost[$postId] ?? []) as $comment): ?>
+                      <?php $commentId = (int)$comment['id']; ?>
+                      <div class="acc-comment">
+                        <div class="acc-chatMeta">🧑‍🎓 <?php echo h((string)($comment['student_name'] ?? 'طالب')); ?> — <?php echo h((string)($comment['created_at'] ?? '')); ?></div>
+                        <div style="margin-top:8px;"><?php echo nl2br(h((string)$comment['comment_text'])); ?></div>
+                        <?php foreach (($platformRepliesByParent[$commentId] ?? []) as $reply): ?>
+                          <div class="acc-commentReply">
+                            <div class="acc-chatMeta">👨‍💼 <?php echo h((string)($reply['admin_name'] ?? 'الإدارة')); ?> — <?php echo h((string)($reply['created_at'] ?? '')); ?></div>
+                            <div style="margin-top:8px;"><?php echo nl2br(h((string)$reply['comment_text'])); ?></div>
+                          </div>
+                        <?php endforeach; ?>
+                      </div>
+                    <?php endforeach; ?>
+                  </div>
+                </article>
+              <?php endforeach; ?>
+            </div>
+          <?php endif; ?>
+        </section>
+
+      <?php elseif ($page === 'chat'): ?>
+        <section class="acc-card" aria-label="شات الطلاب">
+          <div class="acc-card__head">
+            <h2>💬 شات الطلاب</h2>
+            <p>يمكنك بدء محادثة نصية فقط عندما يكون هناك شخص من الإدارة في وضع أونلاين، ثم تواصل معه من نفس الصفحة.</p>
+          </div>
+
+          <div class="acc-chatLayout">
+            <div class="acc-chatSidebar">
+              <div class="acc-chatCard">
+                <h3 style="margin-top:0;">🟢 الإدارة المتصلة الآن</h3>
+                <?php if (empty($onlineAdmins)): ?>
+                  <div class="acc-emptyBox">لا يوجد أي شخص من الإدارة متصل الآن. جرّب لاحقًا لبدء محادثة جديدة.</div>
+                <?php else: ?>
+                  <div class="acc-chatList">
+                    <?php foreach ($onlineAdmins as $adminChat): ?>
+                      <?php $imgUrl = trim((string)($adminChat['image_path'] ?? '')); ?>
+                      <div class="acc-chatItem">
+                        <div class="acc-chatUser">
+                          <?php if ($imgUrl !== ''): ?>
+                            <img class="acc-avatar" src="<?php echo h('../admin/' . ltrim($imgUrl, '/')); ?>" alt="<?php echo h((string)$adminChat['display_name']); ?>">
+                          <?php else: ?>
+                            <div class="acc-avatar" style="display:grid;place-items:center;background:rgba(59,130,246,.12);">👨‍🏫</div>
+                          <?php endif; ?>
+                          <div>
+                            <div style="font-weight:1000;"><?php echo h((string)$adminChat['display_name']); ?></div>
+                            <div class="acc-chatMeta">آخر نشاط: <?php echo h((string)($adminChat['updated_at'] ?? '')); ?></div>
+                          </div>
+                        </div>
+                        <form method="post" class="acc-chatSend" style="margin-top:12px;">
+                          <input type="hidden" name="action" value="start_chat">
+                          <input type="hidden" name="admin_id" value="<?php echo (int)$adminChat['id']; ?>">
+                          <textarea name="message_text" placeholder="اكتب أول رسالة لبدء المحادثة..."></textarea>
+                          <button class="acc-btn" type="submit">🚀 بدء المحادثة</button>
+                        </form>
+                      </div>
+                    <?php endforeach; ?>
+                  </div>
+                <?php endif; ?>
+              </div>
+
+              <div class="acc-chatCard">
+                <h3 style="margin-top:0;">🗂️ محادثاتك</h3>
+                <?php if (empty($studentConversations)): ?>
+                  <div class="acc-emptyBox">لا توجد محادثات محفوظة بعد.</div>
+                <?php else: ?>
+                  <div class="acc-chatList">
+                    <?php foreach ($studentConversations as $conversation): ?>
+                      <?php $convActive = ((int)$conversation['id'] === $selectedConversationId); $imgUrl = trim((string)($conversation['image_path'] ?? '')); ?>
+                      <a class="acc-chatItem <?php echo $convActive ? 'is-active' : ''; ?>" href="account.php?page=chat&chat_id=<?php echo (int)$conversation['id']; ?>">
+                        <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;">
+                          <div class="acc-chatUser">
+                            <?php if ($imgUrl !== ''): ?>
+                              <img class="acc-avatar" src="<?php echo h('../admin/' . ltrim($imgUrl, '/')); ?>" alt="<?php echo h((string)$conversation['display_name']); ?>">
+                            <?php else: ?>
+                              <div class="acc-avatar" style="display:grid;place-items:center;background:rgba(59,130,246,.12);">👨‍🏫</div>
+                            <?php endif; ?>
+                            <div>
+                              <div style="font-weight:1000;"><?php echo h((string)$conversation['display_name']); ?></div>
+                              <div class="acc-chatMeta"><?php echo h((string)($conversation['last_message'] ?: 'لا توجد رسائل بعد')); ?></div>
+                            </div>
+                          </div>
+                          <?php if (!empty($conversation['unread_count'])): ?><span class="acc-unread"><?php echo (int)$conversation['unread_count']; ?></span><?php endif; ?>
+                        </div>
+                      </a>
+                    <?php endforeach; ?>
+                  </div>
+                <?php endif; ?>
+              </div>
+            </div>
+
+            <div class="acc-chatCard">
+              <?php if (!$selectedConversation): ?>
+                <div class="acc-emptyBox">اختر محادثة من القائمة أو ابدأ محادثة جديدة مع الإدارة المتصلة.</div>
+              <?php else: ?>
+                <?php $convImg = trim((string)($selectedConversation['image_path'] ?? '')); ?>
+                <div class="acc-feedHead" style="margin-bottom:14px;">
+                  <div class="acc-chatUser">
+                    <?php if ($convImg !== ''): ?>
+                      <img class="acc-avatar" src="<?php echo h('../admin/' . ltrim($convImg, '/')); ?>" alt="<?php echo h((string)$selectedConversation['display_name']); ?>">
+                    <?php else: ?>
+                      <div class="acc-avatar" style="display:grid;place-items:center;background:rgba(59,130,246,.12);">👨‍🏫</div>
+                    <?php endif; ?>
+                    <div>
+                      <div style="font-weight:1000;font-size:1.05rem;"><?php echo h((string)$selectedConversation['display_name']); ?></div>
+                      <div class="acc-chatMeta"><?php echo !empty($selectedConversation['is_online']) ? '🟢 متصل الآن' : '⚪ غير متصل الآن'; ?></div>
+                    </div>
+                  </div>
+                  <div class="acc-chatMeta">آخر تحديث: <?php echo h((string)($selectedConversation['updated_at'] ?? '')); ?></div>
+                </div>
+
+                <div class="acc-chatMsgs">
+                  <?php foreach ($conversationMessages as $message): ?>
+                    <?php $senderType = (string)($message['sender_type'] ?? 'student'); ?>
+                    <div class="acc-chatMsg <?php echo $senderType === 'student' ? 'acc-chatMsg--student' : 'acc-chatMsg--admin'; ?>">
+                      <div><?php echo nl2br(h((string)$message['message_text'])); ?></div>
+                      <div class="acc-chatMeta" style="margin-top:6px;"><?php echo $senderType === 'student' ? 'أنت' : h((string)$selectedConversation['display_name']); ?> — <?php echo h((string)($message['created_at'] ?? '')); ?></div>
+                    </div>
+                  <?php endforeach; ?>
+                </div>
+
+                <form method="post" class="acc-chatSend">
+                  <input type="hidden" name="action" value="reply_chat">
+                  <input type="hidden" name="conversation_id" value="<?php echo (int)$selectedConversation['id']; ?>">
+                  <textarea name="message_text" placeholder="اكتب رسالتك..."></textarea>
+                  <button class="acc-btn" type="submit">📤 إرسال الرسالة</button>
+                </form>
+              <?php endif; ?>
+            </div>
+          </div>
         </section>
 
       <?php elseif ($page === 'wallet'): ?>
