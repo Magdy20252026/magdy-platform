@@ -186,21 +186,22 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
         <div class="acc-playerOverlay">
           <span class="acc-playerOverlay__chip"><?php echo h($studentWatermark); ?></span>
         </div>
-      </div>
-
-      <div class="acc-platformControls" id="lecturePlayerControls" hidden>
-        <button class="acc-modal-btn acc-modal-btn--primary" type="button" id="lecturePlayerCtrlPlayPause" aria-label="تشغيل أو إيقاف الفيديو" disabled>▶️ تشغيل</button>
-        <button class="acc-modal-btn acc-modal-btn--ghost" type="button" id="lecturePlayerCtrlBack" aria-label="الرجوع 10 ثواني" disabled>⏪ رجوع 10ث</button>
-        <button class="acc-modal-btn acc-modal-btn--ghost" type="button" id="lecturePlayerCtrlForward" aria-label="التقديم 10 ثواني" disabled>⏩ تقديم 10ث</button>
-        <button class="acc-modal-btn acc-modal-btn--ghost" type="button" id="lecturePlayerCtrlFullscreen" aria-label="تكبير شاشة المشغل" disabled>⛶ تكبير</button>
-        <label class="acc-platformControls__label" for="lecturePlayerCtrlQuality">الجودة</label>
-        <select class="acc-platformControls__select" id="lecturePlayerCtrlQuality" disabled>
-          <option value="auto">تلقائي</option>
-        </select>
-        <label class="acc-platformControls__label" for="lecturePlayerCtrlSpeed">السرعة</label>
-        <select class="acc-platformControls__select" id="lecturePlayerCtrlSpeed" disabled>
-          <option value="1">1x</option>
-        </select>
+        <div class="acc-platformControls" id="lecturePlayerControls" hidden>
+          <button class="acc-modal-btn acc-modal-btn--primary" type="button" id="lecturePlayerCtrlPlayPause" aria-label="تشغيل أو إيقاف الفيديو" disabled>▶️ تشغيل</button>
+          <button class="acc-modal-btn acc-modal-btn--ghost" type="button" id="lecturePlayerCtrlBack" aria-label="الرجوع 10 ثواني" disabled>⏪ رجوع 10ث</button>
+          <button class="acc-modal-btn acc-modal-btn--ghost" type="button" id="lecturePlayerCtrlForward" aria-label="التقديم 10 ثواني" disabled>⏩ تقديم 10ث</button>
+          <button class="acc-modal-btn acc-modal-btn--ghost" type="button" id="lecturePlayerCtrlFullscreen" aria-label="تكبير شاشة المشغل" disabled>⛶ تكبير</button>
+          <label class="acc-platformControls__label" for="lecturePlayerCtrlVolume">الصوت</label>
+          <input class="acc-platformControls__range" id="lecturePlayerCtrlVolume" type="range" min="0" max="100" step="1" value="100" aria-label="مستوى صوت الفيديو" aria-valuetext="100%" disabled>
+          <label class="acc-platformControls__label" for="lecturePlayerCtrlQuality">الجودة</label>
+          <select class="acc-platformControls__select" id="lecturePlayerCtrlQuality" disabled>
+            <option value="auto">تلقائي</option>
+          </select>
+          <label class="acc-platformControls__label" for="lecturePlayerCtrlSpeed">السرعة</label>
+          <select class="acc-platformControls__select" id="lecturePlayerCtrlSpeed" disabled>
+            <option value="1">1x</option>
+          </select>
+        </div>
       </div>
 
       <div class="acc-playerNotice" id="lecturePlayerNotice">
@@ -245,6 +246,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   var ctrlBackBtn = document.getElementById('lecturePlayerCtrlBack');
   var ctrlForwardBtn = document.getElementById('lecturePlayerCtrlForward');
   var ctrlFullscreenBtn = document.getElementById('lecturePlayerCtrlFullscreen');
+  var ctrlVolumeInput = document.getElementById('lecturePlayerCtrlVolume');
   var ctrlQualitySelect = document.getElementById('lecturePlayerCtrlQuality');
   var ctrlSpeedSelect = document.getElementById('lecturePlayerCtrlSpeed');
 
@@ -336,7 +338,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   }
 
   function setPlatformControlsEnabled(enabled) {
-    [ctrlPlayPauseBtn, ctrlBackBtn, ctrlForwardBtn, ctrlFullscreenBtn, ctrlQualitySelect, ctrlSpeedSelect].forEach(function(el){
+    [ctrlPlayPauseBtn, ctrlBackBtn, ctrlForwardBtn, ctrlFullscreenBtn, ctrlVolumeInput, ctrlQualitySelect, ctrlSpeedSelect].forEach(function(el){
       if (el) el.disabled = !enabled;
     });
   }
@@ -417,6 +419,18 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
     ctrlSpeedSelect.value = String(currentRate);
   }
 
+  function refreshYoutubeVolumeControl() {
+    if (!youtubePlayer || !ctrlVolumeInput) return;
+    var currentVolume = 100;
+    var isMuted = false;
+    try { currentVolume = youtubePlayer.getVolume(); } catch(e) {}
+    try { isMuted = !!youtubePlayer.isMuted(); } catch(e) {}
+    if (!isFinite(currentVolume)) currentVolume = 100;
+    var normalizedVolume = isMuted ? 0 : Math.max(0, Math.min(100, Math.round(currentVolume)));
+    ctrlVolumeInput.value = String(normalizedVolume);
+    ctrlVolumeInput.setAttribute('aria-valuetext', normalizedVolume + '%');
+  }
+
   function initYoutubePlatformControls(frame) {
     if (!frame) {
       setPlatformControlsVisible(false);
@@ -435,6 +449,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
             setPlayPauseLabel(false);
             refreshYoutubeQualityOptions();
             refreshYoutubeSpeedOptions();
+            refreshYoutubeVolumeControl();
           },
           onStateChange: function(event){
             setPlayPauseLabel(event && event.data === youtubeStatePlaying);
@@ -705,6 +720,22 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
       var nextRate = parseFloat(ctrlSpeedSelect.value || '1');
       if (!isFinite(nextRate) || nextRate <= 0) nextRate = 1;
       youtubePlayer.setPlaybackRate(nextRate);
+    });
+  }
+
+  if (ctrlVolumeInput) {
+    ctrlVolumeInput.addEventListener('input', function(){
+      if (!youtubePlayer) return;
+      var nextVolume = parseInt(ctrlVolumeInput.value || '100', 10);
+      if (!isFinite(nextVolume)) nextVolume = 100;
+      nextVolume = Math.max(0, Math.min(100, nextVolume));
+      ctrlVolumeInput.setAttribute('aria-valuetext', nextVolume + '%');
+      if (nextVolume === 0) {
+        youtubePlayer.mute();
+      } else {
+        youtubePlayer.unMute();
+        youtubePlayer.setVolume(nextVolume);
+      }
     });
   }
 

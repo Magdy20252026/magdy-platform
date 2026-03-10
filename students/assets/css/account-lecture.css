@@ -308,6 +308,16 @@
   background: rgba(44,123,229,.06);
 }
 
+.acc-viewerFrameShell .acc-playerStage .acc-platformControls{
+  position: absolute;
+  inset-inline: 10px;
+  bottom: 10px;
+  z-index: 4;
+  backdrop-filter: blur(6px);
+  background: var(--card-bg);
+  border-color: var(--border);
+}
+
 .acc-platformControls__label{
   font-weight: 900;
   color: var(--text);
@@ -322,6 +332,10 @@
   padding: 8px 10px;
   font-weight: 900;
   font-family: inherit;
+}
+
+.acc-platformControls__range{
+  width: 130px;
 }
 
 .acc-playerStage--platformControls .acc-playerSurface::after{
