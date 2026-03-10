@@ -211,6 +211,10 @@ function student_append_url_params(string $url, array $params): string {
   return $url . $sep . http_build_query($params, '', '&', PHP_QUERY_RFC3986);
 }
 
+function student_sanitize_video_id(string $value): string {
+  return preg_replace('~[^A-Za-z0-9_-]~', '', $value);
+}
+
 function student_extract_youtube_video_id(string $url): string {
   $parts = @parse_url($url);
   if (!is_array($parts)) return '';
@@ -218,18 +222,21 @@ function student_extract_youtube_video_id(string $url): string {
   $host = strtolower((string)($parts['host'] ?? ''));
   $path = trim((string)($parts['path'] ?? ''), '/');
 
-  if ($host === 'youtu.be') return preg_replace('~[^A-Za-z0-9_-]~', '', $path);
+  if ($host === 'youtu.be') {
+    $segments = $path === '' ? [] : explode('/', $path);
+    return student_sanitize_video_id((string)($segments[0] ?? ''));
+  }
 
   if (strpos($host, 'youtube.com') !== false || strpos($host, 'youtube-nocookie.com') !== false) {
     $segments = $path === '' ? [] : explode('/', $path);
     if (!empty($segments[0]) && in_array($segments[0], ['embed', 'shorts', 'live'], true) && !empty($segments[1])) {
-      return preg_replace('~[^A-Za-z0-9_-]~', '', (string)$segments[1]);
+      return student_sanitize_video_id((string)$segments[1]);
     }
 
     $query = [];
     parse_str((string)($parts['query'] ?? ''), $query);
     if (!empty($query['v'])) {
-      return preg_replace('~[^A-Za-z0-9_-]~', '', (string)$query['v']);
+      return student_sanitize_video_id((string)$query['v']);
     }
   }
 

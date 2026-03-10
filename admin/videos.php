@@ -124,6 +124,10 @@ function admin_append_url_params(string $url, array $params): string {
   return $url . $sep . http_build_query($params, '', '&', PHP_QUERY_RFC3986);
 }
 
+function admin_sanitize_video_id(string $value): string {
+  return preg_replace('~[^A-Za-z0-9_-]~', '', $value);
+}
+
 function admin_extract_youtube_video_id(string $url): string {
   $parts = @parse_url($url);
   if (!is_array($parts)) return '';
@@ -131,18 +135,21 @@ function admin_extract_youtube_video_id(string $url): string {
   $host = strtolower((string)($parts['host'] ?? ''));
   $path = trim((string)($parts['path'] ?? ''), '/');
 
-  if ($host === 'youtu.be') return preg_replace('~[^A-Za-z0-9_-]~', '', $path);
+  if ($host === 'youtu.be') {
+    $segments = $path === '' ? [] : explode('/', $path);
+    return admin_sanitize_video_id((string)($segments[0] ?? ''));
+  }
 
   if (strpos($host, 'youtube.com') !== false || strpos($host, 'youtube-nocookie.com') !== false) {
     $segments = $path === '' ? [] : explode('/', $path);
     if (!empty($segments[0]) && in_array($segments[0], ['embed', 'shorts', 'live'], true) && !empty($segments[1])) {
-      return preg_replace('~[^A-Za-z0-9_-]~', '', (string)$segments[1]);
+      return admin_sanitize_video_id((string)$segments[1]);
     }
 
     $query = [];
     parse_str((string)($parts['query'] ?? ''), $query);
     if (!empty($query['v'])) {
-      return preg_replace('~[^A-Za-z0-9_-]~', '', (string)$query['v']);
+      return admin_sanitize_video_id((string)$query['v']);
     }
   }
 
@@ -188,7 +195,7 @@ function admin_normalize_video_src(string $src, string $videoType): string {
   return $src;
 }
 
-function build_admin_video_preview_html(array $videoRow, string $iframeHtml): string {
+function admin_build_video_preview_html(array $videoRow, string $iframeHtml): string {
   $iframeHtml = trim($iframeHtml);
   if ($iframeHtml === '') return '';
 
@@ -487,7 +494,7 @@ if ($previewId > 0) {
   if ($preview) {
     $previewIframe = decrypt_iframe($preview['embed_iframe_enc'] ?? null, $preview['embed_iframe_iv'] ?? null);
     if ($previewIframe === '') $previewIframe = (string)($preview['embed_iframe'] ?? '');
-    $previewHtml = build_admin_video_preview_html($preview, $previewIframe);
+    $previewHtml = admin_build_video_preview_html($preview, $previewIframe);
   }
 }
 
