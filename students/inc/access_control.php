@@ -118,14 +118,37 @@ function student_grant_video_bonus_view(PDO $pdo, int $studentId, int $videoId, 
   student_video_bonus_views_ensure_table($pdo);
 
   try {
+    $pdo->beginTransaction();
+
     $stmt = $pdo->prepare("
-      INSERT INTO video_student_bonus_views (video_id, student_id, bonus_views)
-      VALUES (?, ?, ?)
-      ON DUPLICATE KEY UPDATE bonus_views = bonus_views + VALUES(bonus_views)
+      SELECT id
+      FROM video_student_bonus_views
+      WHERE video_id=? AND student_id=?
+      LIMIT 1
+      FOR UPDATE
     ");
-    $stmt->execute([$videoId, $studentId, $increment]);
+    $stmt->execute([$videoId, $studentId]);
+    $rowId = (int)($stmt->fetchColumn() ?: 0);
+
+    if ($rowId > 0) {
+      $stmt = $pdo->prepare("
+        UPDATE video_student_bonus_views
+        SET bonus_views = bonus_views + ?
+        WHERE id=?
+      ");
+      $stmt->execute([$increment, $rowId]);
+    } else {
+      $stmt = $pdo->prepare("
+        INSERT INTO video_student_bonus_views (video_id, student_id, bonus_views)
+        VALUES (?, ?, ?)
+      ");
+      $stmt->execute([$videoId, $studentId, $increment]);
+    }
+
+    $pdo->commit();
     return true;
   } catch (Throwable $e) {
+    if ($pdo->inTransaction()) $pdo->rollBack();
     return false;
   }
 }
@@ -189,13 +212,14 @@ function student_linked_assessment_name(PDO $pdo, string $type, int $assessmentI
   $assessmentId = (int)$assessmentId;
   if ($assessmentId <= 0) return '';
 
-  $table = '';
-  if ($type === 'exam') $table = 'exams';
-  if ($type === 'assignment') $table = 'assignments';
-  if ($table === '') return '';
-
   try {
-    $stmt = $pdo->prepare("SELECT name FROM {$table} WHERE id=? LIMIT 1");
+    if ($type === 'exam') {
+      $stmt = $pdo->prepare("SELECT name FROM exams WHERE id=? LIMIT 1");
+    } elseif ($type === 'assignment') {
+      $stmt = $pdo->prepare("SELECT name FROM assignments WHERE id=? LIMIT 1");
+    } else {
+      return '';
+    }
     $stmt->execute([$assessmentId]);
     return trim((string)($stmt->fetchColumn() ?: ''));
   } catch (Throwable $e) {
