@@ -295,8 +295,11 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   const youtubeStatePlaying = 1;
   const captureShieldDurationMs = 5200;
   const captureShieldMinHoldMs = 3200;
+  const captureShieldDebounceMs = 350;
+  const blurCheckDelayMs = 120;
   var captureShieldHandle = 0;
   var captureShieldVisibleUntil = 0;
+  var lastCaptureShieldTriggerAt = 0;
 
   function ensureValidHalfSeconds(nextValue) {
     return Math.max(5, parseInt(nextValue || videoState.halfSeconds || fallbackHalfSeconds, 10));
@@ -410,6 +413,14 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
     if (e && e.ctrlKey && e.shiftKey && (key === 's' || key === 'printscreen')) return true;
     if (e && e.altKey && key === 'printscreen') return true;
     return false;
+  }
+
+  function triggerCaptureShieldAttempt(reason) {
+    var now = Date.now();
+    if (now - lastCaptureShieldTriggerAt < captureShieldDebounceMs) return;
+    lastCaptureShieldTriggerAt = now;
+    triggerCaptureShield(reason);
+    sendProgress('heartbeat');
   }
 
   function setPlatformControlsVisible(visible) {
@@ -966,8 +977,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   document.addEventListener('keydown', function(e){
     var key = String(e.key || '').toLowerCase();
     if (isCaptureShortcutEvent(e)) {
-      triggerCaptureShield('⚫️ تم تعتيم المشغل لحماية المحتوى أثناء محاولة تصوير الشاشة.');
-      sendProgress('heartbeat');
+      triggerCaptureShieldAttempt('⚫️ تم تعتيم المشغل لحماية المحتوى أثناء محاولة تصوير الشاشة.');
     }
     var blocked =
       key === 'f12' ||
@@ -980,8 +990,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   }, true);
   document.addEventListener('keyup', function(e){
     if (!isCaptureShortcutEvent(e)) return;
-    triggerCaptureShield('⚫️ تم تعتيم المشغل لحماية المحتوى أثناء محاولة تصوير الشاشة.');
-    sendProgress('heartbeat');
+    triggerCaptureShieldAttempt('⚫️ تم تعتيم المشغل لحماية المحتوى أثناء محاولة تصوير الشاشة.');
   }, true);
 
   document.addEventListener('visibilitychange', function(){
@@ -993,11 +1002,10 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
     hideCaptureShield();
   });
   window.addEventListener('blur', function(){
-    triggerCaptureShield('⚫️ تم تعتيم المشغل تلقائيًا لحماية المحتوى عند محاولة تصوير أو تسجيل الشاشة.');
-    sendProgress('heartbeat');
-  });
-  window.addEventListener('focus', function(){
-    hideCaptureShield();
+    window.setTimeout(function(){
+      if (document.visibilityState !== 'hidden') return;
+      triggerCaptureShieldAttempt('⚫️ تم تعتيم المشغل تلقائيًا لحماية المحتوى عند محاولة تصوير أو تسجيل الشاشة.');
+    }, blurCheckDelayMs);
   });
 
   window.addEventListener('beforeunload', function(){
