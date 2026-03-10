@@ -364,13 +364,13 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   }
 
   function formatClock(seconds) {
-    var total = Math.max(0, Math.floor(parseFloat(seconds) || 0));
-    var hours = Math.floor(total / 3600);
-    var minutes = Math.floor((total % 3600) / 60);
-    var secs = total % 60;
-    var pad = function(n){ return n < 10 ? '0' + n : String(n); };
-    if (hours > 0) return hours + ':' + pad(minutes) + ':' + pad(secs);
-    return pad(minutes) + ':' + pad(secs);
+    var totalSeconds = Math.max(0, Math.floor(parseFloat(seconds) || 0));
+    var hours = Math.floor(totalSeconds / 3600);
+    var minutes = Math.floor((totalSeconds % 3600) / 60);
+    var secs = totalSeconds % 60;
+    var zeroPad = function(n){ return n < 10 ? '0' + n : String(n); };
+    if (hours > 0) return hours + ':' + zeroPad(minutes) + ':' + zeroPad(secs);
+    return zeroPad(minutes) + ':' + zeroPad(secs);
   }
 
   function stopYoutubeTimeTicker() {
@@ -812,17 +812,17 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
       refreshYoutubeTimeControl(true);
     });
 
-    var finishTimelineDrag = function(){
+    var endTimelineInteraction = function(){
       timelineDragging = false;
       refreshYoutubeTimeControl(false);
     };
-    ctrlTimelineInput.addEventListener('change', finishTimelineDrag);
-    ctrlTimelineInput.addEventListener('mouseup', finishTimelineDrag);
-    ctrlTimelineInput.addEventListener('touchend', finishTimelineDrag);
+    ctrlTimelineInput.addEventListener('change', endTimelineInteraction);
+    ctrlTimelineInput.addEventListener('mouseup', endTimelineInteraction);
+    ctrlTimelineInput.addEventListener('touchend', endTimelineInteraction);
     ctrlTimelineInput.addEventListener('keyup', function(e){
       var key = String(e.key || '').toLowerCase();
       if (key === 'arrowleft' || key === 'arrowright' || key === 'home' || key === 'end') {
-        finishTimelineDrag();
+        endTimelineInteraction();
       }
     });
   }
