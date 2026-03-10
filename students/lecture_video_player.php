@@ -263,7 +263,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   const devtoolsWidthGapThreshold = 160;
   const devtoolsHeightGapThreshold = 140;
   const devtoolsStrikeThreshold = 2;
-  const devtoolsCheckIntervalMs = 300;
+  const devtoolsCheckIntervalMs = 400;
   const fallbackHalfSeconds = 30;
   const youtubeStatePlaying = 1;
 
@@ -435,7 +435,6 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
             setPlayPauseLabel(false);
             refreshYoutubeQualityOptions();
             refreshYoutubeSpeedOptions();
-            try { youtubePlayer.playVideo(); } catch(e) { console.warn('Youtube autoplay failed', e); }
           },
           onStateChange: function(event){
             setPlayPauseLabel(event && event.data === youtubeStatePlaying);
@@ -680,8 +679,12 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
     ctrlForwardBtn.addEventListener('click', function(){
       if (!youtubePlayer) return;
       var current = 0;
+      var duration = 0;
       try { current = youtubePlayer.getCurrentTime() || 0; } catch(e) {}
-      youtubePlayer.seekTo(Math.max(0, current + 10), true);
+      try { duration = youtubePlayer.getDuration() || 0; } catch(e) {}
+      var nextTime = current + 10;
+      if (duration > 0) nextTime = Math.min(nextTime, duration);
+      youtubePlayer.seekTo(Math.max(0, nextTime), true);
     });
   }
 
@@ -690,7 +693,6 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
       if (!youtubePlayer) return;
       var nextQuality = String(ctrlQualitySelect.value || 'auto');
       if (nextQuality === 'auto') {
-        try { youtubePlayer.setPlaybackQuality('default'); } catch(e) {}
         return;
       }
       youtubePlayer.setPlaybackQuality(nextQuality);
@@ -705,6 +707,36 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
       youtubePlayer.setPlaybackRate(nextRate);
     });
   }
+
+  document.addEventListener('keydown', function(e){
+    if (!youtubePlayer || !platformControls || platformControls.hidden) return;
+    var target = e.target;
+    if (target && target.tagName) {
+      var tagName = String(target.tagName).toUpperCase();
+      if (tagName === 'INPUT' || tagName === 'TEXTAREA' || tagName === 'SELECT') return;
+    }
+
+    var key = String(e.key || '').toLowerCase();
+    if (key === ' ' || key === 'k') {
+      e.preventDefault();
+      if (ctrlPlayPauseBtn) ctrlPlayPauseBtn.click();
+      return;
+    }
+    if (key === 'arrowleft') {
+      e.preventDefault();
+      if (ctrlBackBtn) ctrlBackBtn.click();
+      return;
+    }
+    if (key === 'arrowright') {
+      e.preventDefault();
+      if (ctrlForwardBtn) ctrlForwardBtn.click();
+      return;
+    }
+    if (key === 'f') {
+      e.preventDefault();
+      if (ctrlFullscreenBtn) ctrlFullscreenBtn.click();
+    }
+  });
 
   document.addEventListener('contextmenu', function(e){ e.preventDefault(); });
   document.addEventListener('mousedown', function(e){ if (e.button === 2) e.preventDefault(); }, true);
