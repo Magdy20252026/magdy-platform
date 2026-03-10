@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Magdy Student</string>
+    <string name="file_picker_not_found">لا يوجد تطبيق لاختيار الملفات على هذا الجهاز.</string>
+</resources>
