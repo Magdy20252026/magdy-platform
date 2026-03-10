@@ -1,4 +1,6 @@
 <resources>
     <string name="app_name">Magdy Student</string>
     <string name="file_picker_not_found">لا يوجد تطبيق لاختيار الملفات على هذا الجهاز.</string>
+    <string name="pdf_open_failed">تعذر تحميل ملف PDF داخل التطبيق.</string>
+    <string name="pdf_viewer_not_found">لا يوجد تطبيق لفتح ملفات PDF على هذا الجهاز.</string>
 </resources>

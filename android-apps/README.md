@@ -43,6 +43,7 @@
 - كل مشروع عبارة عن Android WebView مستقل.
 - تطبيق الطالب يحتوي على `FLAG_SECURE` لمنع screenshot وscreen recording داخل التطبيق.
 - تم تفعيل JavaScript وDOM Storage ودعم اختيار الملفات داخل WebView.
+- تطبيق الطالب يدعم الآن fullscreen للفيديوهات داخل WebView، كما يقوم بتحميل ملفات PDF المحمية وفتحها عبر تطبيقات قراءة PDF المثبتة على الجهاز.
 
 ## بناء APK من Android Studio
 
