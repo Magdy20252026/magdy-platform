@@ -174,7 +174,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
             <?php if (!empty($stats['blocked'])): ?>
               ⛔ انتهت عدد المشاهدات المسموحة لهذا الفيديو، ولن يتم تشغيله مرة أخرى.
             <?php else: ?>
-              يتم تجهيز الفيديو داخل مشغل المنصة تلقائيًا، ويمكنك تشغيله من زر التشغيل داخل الفيديو نفسه.
+              يتم حجب الفيديو افتراضيًا للحماية، ولن يظهر إلا بعد فتح المشغل المحمي من طبقة الأمان داخل الصفحة.
             <?php endif; ?>
           </div>
         </div>
@@ -212,7 +212,12 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
           </div>
         </div>
         <div class="acc-captureShield" id="lectureCaptureShield" role="status" aria-live="polite">
-          ⚫️ تم تعتيم المشغل لحماية المحتوى أثناء محاولة تصوير الشاشة.
+          <div class="acc-captureShield__content">
+            <div class="acc-captureShield__text" id="lectureCaptureShieldText">⚫️ تم تعتيم المشغل لحماية المحتوى أثناء محاولة تصوير الشاشة.</div>
+            <button class="acc-modal-btn acc-modal-btn--primary acc-captureShield__action" type="button" id="lectureCaptureShieldAction">
+              🔓 فتح المشغل المحمي
+            </button>
+          </div>
         </div>
       </div>
 
@@ -220,7 +225,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
         <?php if (!empty($stats['blocked'])): ?>
           ⛔ لا يمكن تشغيل هذا الفيديو لأن عدد المشاهدات المسموحة انتهى.
         <?php else: ?>
-          🔒 هذه الصفحة محمية: تم تعطيل الكليك اليمين واختصارات أدوات المطور، مع طبقة حماية مرئية على الفيديو وإرجاع تلقائي عند محاولة كشف أو نسخ المحتوى.
+          🔒 هذه الصفحة محمية: الفيديو يبقى محجوبًا افتراضيًا ولا يُفتح إلا من داخل طبقة الحماية، مع تعطيل الكليك اليمين واختصارات أدوات المطور وتعتيم فوري عند أي محاولة كشف أو فقدان تركيز.
         <?php endif; ?>
       </div>
     </section>
@@ -264,6 +269,8 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   var ctrlQualitySelect = document.getElementById('lecturePlayerCtrlQuality');
   var ctrlSpeedSelect = document.getElementById('lecturePlayerCtrlSpeed');
   var captureShield = document.getElementById('lectureCaptureShield');
+  var captureShieldText = document.getElementById('lectureCaptureShieldText');
+  var captureShieldActionBtn = document.getElementById('lectureCaptureShieldAction');
 
   var activeWatchToken = '';
   var countedToken = '';
@@ -300,6 +307,8 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   var captureShieldHandle = 0;
   var captureShieldVisibleUntil = 0;
   var lastCaptureShieldTriggerAt = 0;
+  var captureShieldLocked = false;
+  var initialShieldMessage = '🔒 الفيديو محجوب افتراضيًا للحماية. اضغط على زر فتح المشغل المحمي لعرض الفيديو داخل الصفحة الآمنة.';
 
   function ensureValidHalfSeconds(nextValue) {
     return Math.max(5, parseInt(nextValue || videoState.halfSeconds || fallbackHalfSeconds, 10));
@@ -382,8 +391,68 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
 
   function hideCaptureShield(force) {
     if (!captureShield) return;
+    if (captureShieldLocked && !force) return;
     if (!force && Date.now() < captureShieldVisibleUntil) return;
-    captureShield.classList.remove('acc-captureShield--active');
+    if (force) {
+      captureShieldLocked = false;
+      captureShieldVisibleUntil = 0;
+    }
+    captureShield.classList.remove('acc-captureShield--active', 'acc-captureShield--locked');
+    if (playerStage && playerStage.classList) playerStage.classList.remove('acc-playerStage--captureBlocked');
+  }
+
+  function setCaptureShieldMessage(reason) {
+    if (captureShieldText) {
+      captureShieldText.textContent = reason;
+      return;
+    }
+    if (captureShield) captureShield.textContent = reason;
+  }
+
+  function setCaptureShieldLocked(reason, options) {
+    if (!captureShield || !playerStage) return;
+    options = options || {};
+    if (captureShieldHandle) {
+      window.clearTimeout(captureShieldHandle);
+      captureShieldHandle = 0;
+    }
+    captureShieldLocked = true;
+    setCaptureShieldMessage(reason || initialShieldMessage);
+    captureShieldVisibleUntil = Number.MAX_SAFE_INTEGER;
+    captureShield.classList.add('acc-captureShield--active', 'acc-captureShield--locked');
+    playerStage.classList.add('acc-playerStage--captureBlocked');
+    if (captureShieldActionBtn) {
+      captureShieldActionBtn.disabled = !!options.disableAction;
+    }
+    if (youtubePlayer) {
+      try { youtubePlayer.pauseVideo(); } catch(e) {}
+    }
+  }
+
+  function isLikelyMobilePlayback() {
+    if (!window.matchMedia) return false;
+    return window.matchMedia('(pointer: coarse)').matches || window.matchMedia('(max-width: 980px)').matches;
+  }
+
+  function unlockProtectedPlayback() {
+    if (videoState.isBlocked) return;
+    if (document.visibilityState === 'hidden') {
+      setCaptureShieldLocked('🔒 أعد الصفحة إلى الواجهة أولًا ثم افتح المشغل المحمي.');
+      updateNotice('🔒 يجب أن تبقى الصفحة في الواجهة قبل فتح المشغل المحمي.', true);
+      return;
+    }
+
+    hideCaptureShield(true);
+    updateNotice('⏳ جاري تجهيز المشغل المحمي داخل الصفحة الآمنة...', false);
+    if (!playbackBootstrapped) {
+      startPlayback();
+      return;
+    }
+
+    if (youtubePlayer) {
+      try { youtubePlayer.pauseVideo(); } catch(e) {}
+    }
+    updateNotice('✅ تم فتح المشغل المحمي. شغّل الفيديو من زر التشغيل داخل المشغل.', false);
   }
 
   function triggerCaptureShield(reason) {
@@ -392,7 +461,10 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
       window.clearTimeout(captureShieldHandle);
       captureShieldHandle = 0;
     }
-    if (reason) captureShield.textContent = reason;
+    captureShieldLocked = false;
+    if (captureShieldActionBtn) captureShieldActionBtn.disabled = false;
+    captureShield.classList.remove('acc-captureShield--locked');
+    if (reason) setCaptureShieldMessage(reason);
     captureShieldVisibleUntil = Date.now() + captureShieldMinHoldMs;
     captureShield.classList.add('acc-captureShield--active');
     playerStage.classList.add('acc-playerStage--captureBlocked');
@@ -791,6 +863,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
     if (protectedPageClosed) return;
     protectedPageClosed = true;
     stopProgressTimers();
+    setCaptureShieldLocked(reason, {disableAction:true});
     updateNotice(reason, true);
     renderPlaceholder(reason);
     if (fullscreenBtn) fullscreenBtn.disabled = true;
@@ -817,6 +890,10 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
     document.addEventListener('fullscreenchange', function(){
       fullscreenBtn.textContent = document.fullscreenElement ? '🡼 إنهاء التكبير' : '⛶ تكبير';
       if (ctrlFullscreenBtn) ctrlFullscreenBtn.textContent = fullscreenBtn.textContent;
+      if (!document.fullscreenElement && isLikelyMobilePlayback() && playbackBootstrapped && !protectedPageClosed) {
+        setCaptureShieldLocked('🔒 تم إعادة حجب الفيديو بعد الخروج من العرض الآمن على هذا الجهاز. اضغط على فتح المشغل المحمي للمتابعة.');
+        updateNotice('🔒 تمت إعادة حماية الفيديو بعد الخروج من العرض الآمن. افتح المشغل المحمي للمتابعة.', true);
+      }
       toggleImmersiveControlsVisibility(true);
     });
   }
@@ -968,8 +1045,32 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
     }
   });
 
+  if (captureShieldActionBtn) {
+    captureShieldActionBtn.addEventListener('click', function(e){
+      e.preventDefault();
+      if (isLikelyMobilePlayback() && playerStage && !document.fullscreenElement) {
+        var requestFullscreen = playerStage.requestFullscreen || playerStage.webkitRequestFullscreen;
+        if (typeof requestFullscreen === 'function') {
+          try {
+            var fullscreenResult = requestFullscreen.call(playerStage);
+            if (fullscreenResult && typeof fullscreenResult.then === 'function') {
+              fullscreenResult.then(function(){
+                unlockProtectedPlayback();
+              }).catch(function(){
+                unlockProtectedPlayback();
+              });
+              return;
+            }
+          } catch(e) {}
+        }
+      }
+      unlockProtectedPlayback();
+    });
+  }
+
   if (!videoState.isBlocked) {
-    startPlayback();
+    setCaptureShieldLocked(initialShieldMessage);
+    updateNotice('🔒 الفيديو محجوب افتراضيًا للحماية. اضغط على "فتح المشغل المحمي" من داخل طبقة الحماية لبدء التجهيز.', false);
   }
 
   document.addEventListener('contextmenu', function(e){ e.preventDefault(); });
@@ -995,19 +1096,23 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
 
   document.addEventListener('visibilitychange', function(){
     if (document.visibilityState === 'hidden') {
-      triggerCaptureShield('⚫️ تم تعتيم المشغل تلقائيًا عند محاولة تصوير الشاشة أو مغادرة الصفحة.');
+      setCaptureShieldLocked('⚫️ تم تعتيم المشغل تلقائيًا لحماية المحتوى عند محاولة تصوير الشاشة أو مغادرة الصفحة. افتح المشغل المحمي يدويًا للمتابعة.');
       sendProgress('heartbeat');
       return;
     }
-    hideCaptureShield();
   });
   window.addEventListener('blur', function(){
     window.setTimeout(function(){
       var reason = document.visibilityState === 'hidden'
         ? '⚫️ تم تعتيم المشغل تلقائيًا لحماية المحتوى عند محاولة تصوير أو تسجيل الشاشة.'
         : '⚫️ تم تعتيم المشغل تلقائيًا لحماية المحتوى عند محاولة تصوير الشاشة أو سحب التركيز من نافذة المشغل.';
-      triggerCaptureShieldAttempt(reason);
+      setCaptureShieldLocked(reason + ' افتح المشغل المحمي يدويًا للمتابعة.');
+      sendProgress('heartbeat');
     }, blurCheckDelayMs);
+  });
+  window.addEventListener('pagehide', function(){
+    if (protectedPageClosed || videoState.isBlocked) return;
+    setCaptureShieldLocked('⚫️ تمت إعادة حجب المشغل مباشرة عند مغادرة الصفحة أو إخفائها لحماية الفيديو.');
   });
 
   window.addEventListener('beforeunload', function(){

@@ -453,7 +453,7 @@ function student_build_video_player_html(array $videoRow, string $origin = ''): 
   $title = htmlspecialchars((string)($videoRow['title'] ?? 'مشغل الفيديو'), ENT_QUOTES, 'UTF-8');
   $srcAttr = htmlspecialchars($src, ENT_QUOTES, 'UTF-8');
 
-  return '<iframe class="acc-embeddedFrame" id="lectureVideoFrame" src="' . $srcAttr . '" title="' . $title . '" loading="lazy" referrerpolicy="strict-origin-when-cross-origin" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen" allowfullscreen></iframe>';
+  return '<iframe class="acc-embeddedFrame" id="lectureVideoFrame" src="' . $srcAttr . '" title="' . $title . '" loading="lazy" referrerpolicy="strict-origin-when-cross-origin" allow="autoplay; encrypted-media; gyroscope; fullscreen" allowfullscreen></iframe>';
 }
 
 function student_resolve_pdf_absolute_path(string $filePath): string {

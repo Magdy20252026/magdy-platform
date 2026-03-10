@@ -461,9 +461,32 @@
   transition: opacity .2s ease, visibility .2s ease;
 }
 
+.acc-captureShield__content{
+  display:grid;
+  gap: 14px;
+  justify-items:center;
+  max-width: min(92%, 560px);
+}
+
+.acc-captureShield__text{
+  max-width: 100%;
+}
+
+.acc-captureShield__action{
+  min-width: min(100%, 260px);
+  pointer-events: auto;
+}
+
 .acc-captureShield--active{
   opacity: 1;
   visibility: visible;
+}
+
+.acc-captureShield--locked{
+  pointer-events: auto;
+  background:
+    linear-gradient(180deg, rgba(0,0,0,.99), rgba(0,0,0,.965)),
+    repeating-linear-gradient(-32deg, rgba(255,255,255,.1) 0 2px, transparent 2px 58px);
 }
 
 .acc-playerStage--captureBlocked .acc-playerSurface{
@@ -610,6 +633,14 @@
     position: static;
     inset: auto;
     margin: 10px;
+  }
+
+  .acc-playerProtectionMask{
+    opacity: .45;
+  }
+
+  .acc-captureShield__action{
+    width: 100%;
   }
 
   .acc-playerToolbar{
