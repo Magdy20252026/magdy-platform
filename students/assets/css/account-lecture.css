@@ -89,6 +89,12 @@
   gap: 6px;
 }
 
+.acc-item__side{
+  display:grid;
+  gap: 8px;
+  justify-items:end;
+}
+
 .acc-item__desc{
   color: var(--text);
   font-weight: 850;
@@ -166,6 +172,17 @@
   background:
     radial-gradient(circle at top, rgba(44,123,229,.25), transparent 46%),
     linear-gradient(135deg, #0a1020, #05070d);
+}
+
+.acc-pdfPlaceholder{
+  padding: 18px 20px;
+  border-radius: 18px;
+  border: 1px dashed rgba(44,123,229,.35);
+  background: rgba(44,123,229,.08);
+  color: var(--text);
+  font-weight: 900;
+  line-height: 1.9;
+  text-align: center;
 }
 
 .acc-embeddedFrame,
@@ -260,6 +277,12 @@
 
 .acc-pdfViewer{
   min-height: 620px;
+}
+
+.acc-playerStage[hidden],
+.acc-pdfViewer[hidden],
+.acc-pdfPlaceholder[hidden]{
+  display:none;
 }
 
 .acc-screenWatermark{
