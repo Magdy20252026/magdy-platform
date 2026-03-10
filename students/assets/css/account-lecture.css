@@ -66,7 +66,7 @@
 .acc-item--media{
   width: 100%;
   text-align: right;
-  cursor: pointer;
+  cursor: default;
   transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease, background .18s ease;
 }
 
@@ -297,6 +297,68 @@
   line-height: 1.8;
 }
 
+.acc-viewerPage{
+  padding: 14px 0 28px;
+}
+
+.acc-viewerHero{
+  display:grid;
+  gap: 14px;
+}
+
+.acc-viewerHero__top{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.acc-viewerHero__meta{
+  display:grid;
+  gap: 8px;
+}
+
+.acc-viewerHero__title{
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 1000;
+  color: var(--text);
+}
+
+.acc-viewerHero__sub{
+  color: var(--muted);
+  font-weight: 900;
+  line-height: 1.8;
+}
+
+.acc-viewerStats{
+  display:flex;
+  flex-wrap:wrap;
+  gap: 10px;
+}
+
+.acc-viewerStats .pill{
+  background: rgba(44,123,229,.06);
+}
+
+.acc-viewerFrameShell{
+  display:grid;
+  gap: 14px;
+}
+
+.acc-viewerFrameShell .acc-playerStage{
+  min-height: min(68vw, 760px);
+}
+
+.acc-viewerFrameShell .acc-playerSurface{
+  min-height: 420px;
+}
+
+.acc-viewerFrameShell .acc-pdfViewer{
+  min-height: min(82vh, 980px);
+}
+
 .acc-pdfViewer{
   min-height: 620px;
 }
@@ -349,9 +411,14 @@
 @media (max-width: 860px){
   .acc-playerSurface{ min-height: 240px; }
   .acc-pdfViewer{ min-height: 420px; }
+  .acc-viewerFrameShell .acc-playerSurface{ min-height: 260px; }
 }
 
 @media (max-width: 640px){
+  .acc-viewerHero__top{
+    align-items:stretch;
+  }
+
   .acc-playerToolbar{
     align-items:stretch;
   }

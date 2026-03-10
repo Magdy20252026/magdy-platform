@@ -1,0 +1,528 @@
+<?php
+require __DIR__ . '/../admin/inc/db.php';
+require_once __DIR__ . '/inc/platform_settings.php';
+require __DIR__ . '/inc/student_auth.php';
+require __DIR__ . '/inc/access_control.php';
+
+no_cache_headers();
+student_require_login();
+
+if (!function_exists('h')) {
+  function h(string $v): string { return htmlspecialchars($v, ENT_QUOTES, 'UTF-8'); }
+}
+
+$studentId = (int)($_SESSION['student_id'] ?? 0);
+$videoId = (int)($_GET['video_id'] ?? 0);
+if ($studentId <= 0 || $videoId <= 0) {
+  header('Location: account.php?page=platform_courses');
+  exit;
+}
+
+$video = student_get_video_row($pdo, $videoId);
+if (!$video) {
+  header('Location: account.php?page=platform_courses');
+  exit;
+}
+
+$lectureId = (int)($video['lecture_id'] ?? 0);
+if (!student_has_lecture_access($pdo, $studentId, $lectureId)) {
+  header('Location: account.php?page=platform_courses');
+  exit;
+}
+
+$stmt = $pdo->prepare("
+  SELECT s.full_name, s.wallet_balance, s.barcode
+  FROM students s
+  WHERE s.id=?
+  LIMIT 1
+");
+$stmt->execute([$studentId]);
+$student = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+if (!$student) {
+  header('Location: logout.php');
+  exit;
+}
+
+$stmt = $pdo->prepare("
+  SELECT l.id, l.name, c.id AS course_id, c.name AS course_name
+  FROM lectures l
+  INNER JOIN courses c ON c.id = l.course_id
+  WHERE l.id=?
+  LIMIT 1
+");
+$stmt->execute([$lectureId]);
+$lecture = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+if (!$lecture) {
+  header('Location: account.php?page=platform_courses');
+  exit;
+}
+
+student_video_views_ensure_table($pdo);
+$stats = student_get_video_watch_stats($pdo, $studentId, $videoId, $video);
+$halfSeconds = student_video_half_watch_seconds((int)($video['duration_minutes'] ?? 0));
+
+$row = get_platform_settings_row($pdo);
+$platformName = trim((string)($row['platform_name'] ?? 'منصتي التعليمية'));
+if ($platformName === '') $platformName = 'منصتي التعليمية';
+$logoDb = trim((string)($row['platform_logo'] ?? ''));
+$logoUrl = $logoDb !== '' ? '../admin/' . ltrim($logoDb, '/') : null;
+
+$studentName = (string)($student['full_name'] ?? ($_SESSION['student_name'] ?? ''));
+$wallet = (float)($student['wallet_balance'] ?? 0);
+$studentCode = trim((string)($student['barcode'] ?? ''));
+if ($studentCode === '') $studentCode = 'STD-' . $studentId;
+$studentWatermark = $studentCode . ' • ' . $studentName;
+
+$cssVer = (string)@filemtime(__DIR__ . '/assets/css/account.css');
+if ($cssVer === '' || $cssVer === '0') $cssVer = (string)time();
+$lecCssVer = (string)@filemtime(__DIR__ . '/assets/css/account-lecture.css');
+if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
+?>
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;800;900;1000&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="assets/css/site.css">
+  <link rel="stylesheet" href="assets/css/account.css?v=<?php echo h($cssVer); ?>">
+  <link rel="stylesheet" href="assets/css/account-lecture.css?v=<?php echo h($lecCssVer); ?>">
+
+  <style>
+    .pill{padding:10px 12px;border:1px solid #ddd;border-radius:14px;font-weight:900}
+    .acc-modal-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:10px 14px;border:2px solid transparent;border-radius:12px;font-weight:700;cursor:pointer;font-family:inherit;font-size:1em;text-decoration:none}
+    .acc-modal-btn--primary{background:#111;color:#fff}
+    .acc-modal-btn--ghost{background:var(--page-bg);border-color:var(--border);color:var(--text)}
+  </style>
+
+  <title>مشغل المحاضرة - <?php echo h((string)($video['title'] ?? 'فيديو المحاضرة')); ?></title>
+</head>
+<body>
+
+<header class="acc-topbar" role="banner">
+  <div class="container">
+    <div class="acc-topbar__bar">
+      <div class="acc-topbar__right">
+        <a class="acc-brand" href="account_lecture.php?lecture_id=<?php echo (int)$lectureId; ?>" aria-label="<?php echo h($platformName); ?>">
+          <?php if ($logoUrl): ?>
+            <img class="acc-brand__logo" src="<?php echo h($logoUrl); ?>" alt="Logo">
+          <?php else: ?>
+            <span class="acc-brand__logoFallback" aria-hidden="true"></span>
+          <?php endif; ?>
+          <span class="acc-brand__name"><?php echo h($platformName); ?></span>
+        </a>
+
+        <div class="acc-theme" data-theme-switch aria-label="تبديل الوضع">
+          <button class="acc-theme__btn" type="button" data-theme="light" aria-label="لايت">☀</button>
+          <button class="acc-theme__btn" type="button" data-theme="dark" aria-label="دارك">🌙</button>
+          <span class="acc-theme__knob" aria-hidden="true"></span>
+        </div>
+      </div>
+
+      <div class="acc-topbar__left">
+        <a class="acc-btn acc-btn--ghost" href="account_lecture.php?lecture_id=<?php echo (int)$lectureId; ?>">⬅️ رجوع</a>
+
+        <div class="acc-student" title="<?php echo h($studentName); ?>">
+          <span aria-hidden="true">👤</span>
+          <span class="acc-student__name"><?php echo h($studentName); ?></span>
+        </div>
+
+        <div class="acc-pill" title="رصيد المحفظة">
+          <span aria-hidden="true">💳</span>
+          <span><?php echo number_format($wallet, 2); ?> جنيه</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="acc-screenWatermark" aria-hidden="true">
+  <span class="acc-screenWatermark__chip acc-screenWatermark__chip--one"><?php echo h($studentWatermark); ?></span>
+  <span class="acc-screenWatermark__chip acc-screenWatermark__chip--two"><?php echo h($studentWatermark); ?></span>
+</div>
+
+<main class="acc-viewerPage">
+  <div class="container">
+    <section class="acc-card acc-viewerHero" aria-label="بيانات الفيديو">
+      <div class="acc-viewerHero__top">
+        <div class="acc-viewerHero__meta">
+          <h1 class="acc-viewerHero__title">🎥 <?php echo h((string)($video['title'] ?? 'فيديو المحاضرة')); ?></h1>
+          <div class="acc-viewerHero__sub">
+            المحاضرة: <b><?php echo h((string)($lecture['name'] ?? '')); ?></b>
+            <br>
+            الكورس: <b><?php echo h((string)($lecture['course_name'] ?? '')); ?></b>
+          </div>
+        </div>
+
+        <div class="acc-playerToolbar__actions">
+          <button class="acc-modal-btn acc-modal-btn--primary" type="button" id="lecturePlayerStartBtn"<?php echo !empty($stats['blocked']) ? ' disabled' : ''; ?>>▶️ ابدأ تشغيل الفيديو</button>
+          <button class="acc-modal-btn acc-modal-btn--ghost" type="button" id="lecturePlayerFullscreenBtn"<?php echo !empty($stats['blocked']) ? ' disabled' : ''; ?>>⛶ تكبير المشغل</button>
+        </div>
+      </div>
+
+      <div class="acc-viewerStats">
+        <span class="pill">⏱️ المدة: <b><?php echo (int)($video['duration_minutes'] ?? 0); ?> دقيقة</b></span>
+        <span class="pill">👁️ المستخدم: <b id="videoViewsUsed"><?php echo (int)($stats['used'] ?? 0); ?></b> / <b id="videoViewsAllowed"><?php echo (int)($stats['allowed'] ?? 1); ?></b></span>
+        <span class="pill">🟢 المتبقي: <b id="videoViewsRemaining"><?php echo (int)($stats['remaining'] ?? 0); ?></b></span>
+        <span class="pill">⌛ نصف المدة: <b id="videoHalfSeconds"><?php echo (int)$halfSeconds; ?></b> ثانية</span>
+      </div>
+    </section>
+
+    <section class="acc-card acc-viewerFrameShell" aria-label="مشغل فيديو المحاضرة">
+      <div class="acc-playerStage" id="lecturePlayerStage">
+        <div class="acc-playerSurface" id="lecturePlayerSurface">
+          <div class="acc-playerPlaceholder" id="lecturePlayerPlaceholder">
+            <?php if (!empty($stats['blocked'])): ?>
+              ⛔ انتهت عدد المشاهدات المسموحة لهذا الفيديو، ولن يتم تشغيله مرة أخرى.
+            <?php else: ?>
+              اضغط <b>ابدأ تشغيل الفيديو</b> لفتح الفيديو داخل مشغل المنصة. يبدأ احتساب الزمن من لحظة ضغطك على زر التشغيل، ويتم تسجيل مشاهدة عند تجاوز نصف مدة الفيديو.
+            <?php endif; ?>
+          </div>
+        </div>
+        <div class="acc-playerOverlay">
+          <span class="acc-playerOverlay__chip"><?php echo h($studentWatermark); ?></span>
+        </div>
+      </div>
+
+      <div class="acc-playerNotice" id="lecturePlayerNotice">
+        <?php if (!empty($stats['blocked'])): ?>
+          ⛔ لا يمكن تشغيل هذا الفيديو لأن عدد المشاهدات المسموحة انتهى.
+        <?php else: ?>
+          🔒 هذه الصفحة محمية: تم تعطيل الكليك اليمين واختصارات أدوات المطور، وسيتم إغلاق الصفحة إذا تم اكتشاف فتح أدوات المطور.
+        <?php endif; ?>
+      </div>
+    </section>
+  </div>
+</main>
+
+<script src="assets/js/theme.js"></script>
+<script>
+(function(){
+  var videoId = <?php echo (int)$videoId; ?>;
+  var lectureId = <?php echo (int)$lectureId; ?>;
+  var videoState = {
+    id: videoId,
+    title: <?php echo json_encode((string)($video['title'] ?? ''), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>,
+    durationMinutes: <?php echo (int)($video['duration_minutes'] ?? 0); ?>,
+    viewsAllowed: <?php echo (int)($stats['allowed'] ?? 1); ?>,
+    viewsUsed: <?php echo (int)($stats['used'] ?? 0); ?>,
+    viewsRemaining: <?php echo (int)($stats['remaining'] ?? 0); ?>,
+    isBlocked: <?php echo !empty($stats['blocked']) ? 'true' : 'false'; ?>,
+    halfSeconds: <?php echo (int)$halfSeconds; ?>
+  };
+
+  var surface = document.getElementById('lecturePlayerSurface');
+  var noticeEl = document.getElementById('lecturePlayerNotice');
+  var startBtn = document.getElementById('lecturePlayerStartBtn');
+  var fullscreenBtn = document.getElementById('lecturePlayerFullscreenBtn');
+  var playerStage = document.getElementById('lecturePlayerStage');
+  var viewsAllowedEl = document.getElementById('videoViewsAllowed');
+  var viewsUsedEl = document.getElementById('videoViewsUsed');
+  var viewsRemainingEl = document.getElementById('videoViewsRemaining');
+  var halfSecondsEl = document.getElementById('videoHalfSeconds');
+
+  var activeWatchToken = '';
+  var countedToken = '';
+  var heartbeatHandle = 0;
+  var progressHandle = 0;
+  var progressBaseSeconds = 0;
+  var progressBaseStartedAt = 0;
+  var requestInFlight = false;
+  var protectedPageClosed = false;
+
+  function updateNotice(text, isError) {
+    if (!noticeEl) return;
+    noticeEl.textContent = text;
+    noticeEl.style.borderColor = isError ? 'rgba(207,42,55,.35)' : 'rgba(44,123,229,.35)';
+    noticeEl.style.background = isError ? 'rgba(207,42,55,.08)' : 'rgba(44,123,229,.08)';
+  }
+
+  function renderPlaceholder(message) {
+    if (!surface) return;
+    surface.innerHTML = '<div class="acc-playerPlaceholder">' + message + '</div>';
+  }
+
+  function mountPlayerHtml(html) {
+    if (!surface) return Promise.resolve();
+
+    surface.innerHTML = '';
+    if (!html) return Promise.resolve();
+
+    var host = document.createElement('div');
+    host.className = 'acc-playerEmbedHost';
+    host.innerHTML = html;
+    surface.appendChild(host);
+
+    var scripts = Array.prototype.slice.call(host.querySelectorAll('script'));
+    return scripts.reduce(function(chain, oldScript){
+      return chain.then(function(){
+        return new Promise(function(resolve){
+          if (!oldScript.parentNode) {
+            resolve();
+            return;
+          }
+
+          var newScript = document.createElement('script');
+          Array.prototype.slice.call(oldScript.attributes).forEach(function(attr){
+            var attrName = String(attr.name || '').toLowerCase();
+            if (
+              attrName === 'src' ||
+              attrName === 'type' ||
+              attrName === 'async' ||
+              attrName === 'defer' ||
+              attrName === 'id' ||
+              attrName.indexOf('data-') === 0
+            ) {
+              newScript.setAttribute(attr.name, attr.value);
+            }
+          });
+
+          if (newScript.src) {
+            newScript.async = false;
+            newScript.onload = resolve;
+            newScript.onerror = resolve;
+          } else {
+            newScript.text = oldScript.text || oldScript.textContent || '';
+            resolve();
+          }
+
+          oldScript.parentNode.replaceChild(newScript, oldScript);
+        });
+      });
+    }, Promise.resolve());
+  }
+
+  function syncStats(stats) {
+    if (!stats) return;
+    videoState.viewsAllowed = parseInt(stats.allowed || videoState.viewsAllowed || 1, 10);
+    videoState.viewsUsed = parseInt(stats.used || 0, 10);
+    videoState.viewsRemaining = parseInt(stats.remaining || 0, 10);
+    videoState.isBlocked = videoState.viewsRemaining <= 0;
+
+    if (viewsAllowedEl) viewsAllowedEl.textContent = videoState.viewsAllowed;
+    if (viewsUsedEl) viewsUsedEl.textContent = videoState.viewsUsed;
+    if (viewsRemainingEl) viewsRemainingEl.textContent = videoState.viewsRemaining;
+
+    if (videoState.isBlocked && startBtn) startBtn.disabled = true;
+    if (videoState.isBlocked && fullscreenBtn && !document.fullscreenElement) fullscreenBtn.disabled = true;
+  }
+
+  function stopProgressTimers() {
+    if (heartbeatHandle) {
+      window.clearInterval(heartbeatHandle);
+      heartbeatHandle = 0;
+    }
+    if (progressHandle) {
+      window.clearInterval(progressHandle);
+      progressHandle = 0;
+    }
+    requestInFlight = false;
+  }
+
+  function currentWatchedSeconds() {
+    if (!progressBaseStartedAt) return progressBaseSeconds;
+    return progressBaseSeconds + Math.max(0, Math.floor((Date.now() - progressBaseStartedAt) / 1000));
+  }
+
+  function resetProgress(seconds) {
+    progressBaseSeconds = Math.max(0, parseInt(seconds || 0, 10));
+    progressBaseStartedAt = Date.now();
+  }
+
+  function startNoticeTicker() {
+    if (progressHandle) window.clearInterval(progressHandle);
+    progressHandle = window.setInterval(function(){
+      if (!activeWatchToken || countedToken === activeWatchToken) return;
+      var remaining = Math.max(0, videoState.halfSeconds - currentWatchedSeconds());
+      updateNotice('⏱️ المؤقت يعمل في الخلفية. سيتم احتساب المشاهدة بعد ' + remaining + ' ثانية من وقت ضغطك على زر التشغيل.', false);
+    }, 1000);
+  }
+
+  function sendProgress(action) {
+    if (!activeWatchToken || requestInFlight || protectedPageClosed) return;
+
+    requestInFlight = true;
+    var body = new URLSearchParams();
+    body.set('action', action || 'heartbeat');
+    body.set('video_id', videoId);
+    body.set('watch_token', activeWatchToken);
+
+    fetch('api/lecture_video_api.php', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'},
+      body: body.toString()
+    }).then(function(res){
+      return res.json();
+    }).then(function(data){
+      requestInFlight = false;
+      if (!data) return;
+
+      if (data.stats) syncStats(data.stats);
+      if (typeof data.half_seconds !== 'undefined') {
+        videoState.halfSeconds = Math.max(5, parseInt(data.half_seconds || videoState.halfSeconds || 30, 10));
+        if (halfSecondsEl) halfSecondsEl.textContent = videoState.halfSeconds;
+      }
+      if (typeof data.watched_seconds !== 'undefined') {
+        resetProgress(parseInt(data.watched_seconds || 0, 10));
+      }
+
+      if (data.counted) {
+        countedToken = activeWatchToken;
+        stopProgressTimers();
+        updateNotice('✅ ' + (data.message || 'تم احتساب مشاهدة الفيديو بنجاح.'), false);
+        return;
+      }
+
+      if (data.ok === false && action !== 'heartbeat') {
+        updateNotice('⛔ ' + (data.message || 'لم يكتمل زمن المشاهدة المطلوب بعد.'), true);
+        return;
+      }
+    }).catch(function(){
+      requestInFlight = false;
+    });
+  }
+
+  function startBackgroundTracking(initialWatchedSeconds) {
+    stopProgressTimers();
+    resetProgress(initialWatchedSeconds);
+    startNoticeTicker();
+    heartbeatHandle = window.setInterval(function(){
+      sendProgress('heartbeat');
+    }, 10000);
+  }
+
+  function startPlayback() {
+    if (videoState.isBlocked) {
+      updateNotice('⛔ انتهت عدد المشاهدات المسموحة لهذا الفيديو.', true);
+      return;
+    }
+
+    if (startBtn) {
+      startBtn.disabled = true;
+      startBtn.textContent = '⏳ جاري تجهيز المشغل...';
+    }
+
+    renderPlaceholder('⏳ جاري تجهيز الفيديو داخل مشغل المنصة...');
+
+    var body = new URLSearchParams();
+    body.set('action', 'start');
+    body.set('video_id', videoId);
+
+    fetch('api/lecture_video_api.php', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'},
+      body: body.toString()
+    }).then(function(res){
+      return res.json();
+    }).then(function(data){
+      if (startBtn) {
+        startBtn.disabled = false;
+        startBtn.textContent = '▶️ إعادة تشغيل المؤقت';
+      }
+
+      if (!data || !data.ok) {
+        renderPlaceholder('❌ تعذر تشغيل الفيديو داخل بلاير المنصة.');
+        if (data && data.stats) syncStats(data.stats);
+        updateNotice('⛔ ' + ((data && data.message) || 'تعذر تشغيل الفيديو داخل بلاير المنصة.'), true);
+        return;
+      }
+
+      activeWatchToken = data.watch_token || '';
+      countedToken = '';
+      if (typeof data.half_seconds !== 'undefined') {
+        videoState.halfSeconds = Math.max(5, parseInt(data.half_seconds || videoState.halfSeconds || 30, 10));
+        if (halfSecondsEl) halfSecondsEl.textContent = videoState.halfSeconds;
+      }
+
+      mountPlayerHtml(data.player_html || '').then(function(){
+        if (data.stats) syncStats(data.stats);
+        startBackgroundTracking(parseInt(data.watched_seconds || 0, 10));
+        updateNotice('▶️ تم فتح الفيديو داخل مشغل المنصة. المؤقت الخلفي بدأ الآن وسيتم احتساب المشاهدة بعد تجاوز نصف المدة.', false);
+      });
+    }).catch(function(){
+      if (startBtn) {
+        startBtn.disabled = false;
+        startBtn.textContent = '▶️ ابدأ تشغيل الفيديو';
+      }
+      renderPlaceholder('❌ حدث خطأ أثناء الاتصال بالسيرفر.');
+      updateNotice('❌ حدث خطأ أثناء تجهيز المشغل.', true);
+    });
+  }
+
+  function closeProtectedPage(reason) {
+    if (protectedPageClosed) return;
+    protectedPageClosed = true;
+    stopProgressTimers();
+    updateNotice(reason, true);
+    document.body.innerHTML = '';
+    try { window.open('', '_self'); } catch (e) {}
+    try { window.close(); } catch (e) {}
+    window.location.replace('about:blank');
+  }
+
+  if (startBtn) {
+    startBtn.addEventListener('click', startPlayback);
+  }
+
+  if (fullscreenBtn && playerStage) {
+    fullscreenBtn.addEventListener('click', function(){
+      if (document.fullscreenElement) {
+        if (document.exitFullscreen) document.exitFullscreen();
+        return;
+      }
+      if (playerStage.requestFullscreen) playerStage.requestFullscreen();
+    });
+
+    document.addEventListener('fullscreenchange', function(){
+      fullscreenBtn.textContent = document.fullscreenElement ? '🡼 إغلاق التكبير' : '⛶ تكبير المشغل';
+    });
+  }
+
+  document.addEventListener('contextmenu', function(e){ e.preventDefault(); });
+  document.addEventListener('mousedown', function(e){ if (e.button === 2) e.preventDefault(); }, true);
+  document.addEventListener('keydown', function(e){
+    var key = String(e.key || '').toLowerCase();
+    var blocked =
+      key === 'f12' ||
+      (e.ctrlKey && e.shiftKey && (key === 'i' || key === 'j' || key === 'c')) ||
+      (e.ctrlKey && key === 'u');
+    if (blocked) {
+      e.preventDefault();
+      closeProtectedPage('⛔ تم إغلاق الصفحة لحماية المحتوى عند محاولة فتح أدوات المطور.');
+    }
+  }, true);
+
+  document.addEventListener('visibilitychange', function(){
+    if (document.visibilityState === 'hidden') {
+      sendProgress('heartbeat');
+    }
+  });
+
+  window.addEventListener('beforeunload', function(){
+    if (!activeWatchToken || countedToken === activeWatchToken) return;
+    var body = new URLSearchParams();
+    body.set('action', 'complete');
+    body.set('video_id', videoId);
+    body.set('watch_token', activeWatchToken);
+    if (navigator.sendBeacon) {
+      navigator.sendBeacon('api/lecture_video_api.php', new Blob([body.toString()], {type: 'application/x-www-form-urlencoded; charset=UTF-8'}));
+    }
+  });
+
+  window.setInterval(function(){
+    if (protectedPageClosed) return;
+    var devtoolsOpen =
+      Math.abs(window.outerWidth - window.innerWidth) > 160 ||
+      Math.abs(window.outerHeight - window.innerHeight) > 160;
+    if (devtoolsOpen) {
+      closeProtectedPage('⛔ تم اكتشاف فتح أدوات المطور، وتم إغلاق الصفحة لحماية الفيديو.');
+    }
+  }, 1200);
+})();
+</script>
+</body>
+</html>

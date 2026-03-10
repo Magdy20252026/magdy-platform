@@ -196,11 +196,6 @@ $studentCode = trim((string)($student['barcode'] ?? ''));
 if ($studentCode === '') $studentCode = 'STD-' . $studentId;
 $studentWatermark = $studentCode . ' • ' . $studentName;
 
-$selectedVideoId = 0;
-$selectedPdfId = 0;
-$videosForJs = [];
-$selectedVideoRow = null;
-
 if ($isLectureOpen && !empty($videos)) {
   student_video_views_ensure_table($pdo);
 
@@ -212,36 +207,8 @@ if ($isLectureOpen && !empty($videos)) {
     $videoRow['views_remaining'] = (int)$stats['remaining'];
     $videoRow['is_blocked'] = (bool)$stats['blocked'];
     $videoRow['half_watch_seconds'] = student_video_half_watch_seconds((int)($videoRow['duration_minutes'] ?? 0));
-
-    $videosForJs[] = [
-      'id' => $videoId,
-      'title' => (string)($videoRow['title'] ?? ''),
-      'duration_minutes' => (int)($videoRow['duration_minutes'] ?? 0),
-      'views_allowed' => (int)$videoRow['views_allowed'],
-      'views_used' => (int)$videoRow['views_used'],
-      'views_remaining' => (int)$videoRow['views_remaining'],
-      'is_blocked' => (bool)$videoRow['is_blocked'],
-      'half_watch_seconds' => (int)$videoRow['half_watch_seconds'],
-      'video_type' => (string)($videoRow['video_type'] ?? ''),
-    ];
-
-    if ($selectedVideoId <= 0 && !$videoRow['is_blocked']) {
-      $selectedVideoId = $videoId;
-    }
   }
   unset($videoRow);
-
-  if ($selectedVideoId <= 0 && !empty($videos[0]['id'])) {
-    $selectedVideoId = (int)$videos[0]['id'];
-  }
-
-  foreach ($videos as $videoRow) {
-    if ((int)($videoRow['id'] ?? 0) === $selectedVideoId) {
-      $selectedVideoRow = $videoRow;
-      break;
-    }
-  }
-
 }
 
 /* lecture price show */
@@ -386,39 +353,8 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
         <div style="font-weight:900;color:var(--muted);">لا توجد فيديوهات داخل هذه المحاضرة.</div>
       <?php else: ?>
         <?php if ($isLectureOpen): ?>
-          <div class="acc-playerShell">
-            <div class="acc-playerStage" id="lecturePlayerStage"<?php echo $selectedVideoId > 0 ? '' : ' hidden'; ?>>
-              <div class="acc-playerSurface" id="lecturePlayerSurface">
-                <div class="acc-playerPlaceholder" id="lecturePlayerPlaceholder">
-                  اختر الفيديو من القائمة ثم اضغط <b>ابدأ المشاهدة</b> ليتم تشغيله داخل بلاير المنصة.
-                </div>
-              </div>
-              <div class="acc-playerOverlay">
-                <span class="acc-playerOverlay__chip"><?php echo h($studentWatermark); ?></span>
-              </div>
-            </div>
-
-            <div class="acc-playerToolbar">
-              <div class="acc-playerToolbar__meta">
-                <div class="acc-playerToolbar__title" id="lecturePlayerTitle"><?php echo $selectedVideoRow ? h((string)($selectedVideoRow['title'] ?? 'فيديو المحاضرة')) : 'بدون فيديو محدد'; ?></div>
-                <div class="acc-playerToolbar__sub" id="lecturePlayerSub"><?php echo $selectedVideoRow ? ('المدة: ' . (int)($selectedVideoRow['duration_minutes'] ?? 0) . ' دقيقة • المتبقي: ' . (int)($selectedVideoRow['views_remaining'] ?? 0) . ' من ' . (int)($selectedVideoRow['views_allowed'] ?? 0)) : 'اختر فيديو لعرض المدة والعدد المتبقي من المشاهدات.'; ?></div>
-              </div>
-
-              <div class="acc-playerToolbar__actions">
-                <button class="acc-modal-btn acc-modal-btn--primary" type="button" id="lecturePlayerStartBtn"<?php echo (!$selectedVideoRow || !empty($selectedVideoRow['is_blocked'])) ? ' disabled' : ''; ?>>▶️ ابدأ المشاهدة</button>
-                <button class="acc-modal-btn acc-modal-btn--ghost" type="button" id="lecturePlayerFullscreenBtn"<?php echo ($selectedVideoRow && empty($selectedVideoRow['is_blocked'])) ? '' : ' disabled'; ?>>⛶ تكبير البلاير</button>
-              </div>
-            </div>
-
-            <div class="acc-playerNotice" id="lecturePlayerNotice">
-              <?php if ($selectedVideoRow && !empty($selectedVideoRow['is_blocked'])): ?>
-                ⛔ انتهت عدد المشاهدات المسموحة لهذا الفيديو، ولن يتم تشغيله مرة أخرى.
-              <?php elseif ($selectedVideoRow): ?>
-                ▶️ تم تجهيز أول فيديو داخل بلاير المحاضرة تلقائيًا. يتم تسجيل مشاهدة واحدة عند الوصول إلى نصف مدة الفيديو المحددة.
-              <?php else: ?>
-                ⏱️ يبدأ احتساب المشاهدة من بداية التشغيل ويتم تسجيل مشاهدة واحدة عند الوصول إلى نصف مدة الفيديو المحددة.
-              <?php endif; ?>
-            </div>
+          <div class="acc-playerNotice">
+            ▶️ تم إلغاء التشغيل داخل صفحة التفاصيل. اضغط على <b>فتح المشغل</b> لفتح صفحة مستقلة لتشغيل الفيديو داخل بلاير المنصة مع العلامة المائية المتحركة واحتساب المشاهدة بعد تجاوز نصف المدة.
           </div>
         <?php endif; ?>
 
@@ -430,23 +366,8 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
               $isBlockedVideo = (bool)($v['is_blocked'] ?? false);
               $videoId = (int)($v['id'] ?? 0);
             ?>
-            <button
-              class="acc-item acc-item--media<?php echo ($selectedVideoId === $videoId ? ' is-active' : ''); ?><?php echo ($isBlockedVideo ? ' is-blocked' : ''); ?>"
-              type="button"
-              <?php if ($isLectureOpen): ?>
-                data-video-select
-                data-video-id="<?php echo $videoId; ?>"
-                data-video-title="<?php echo h((string)$v['title']); ?>"
-                data-duration-minutes="<?php echo (int)($v['duration_minutes'] ?? 0); ?>"
-                data-views-allowed="<?php echo $videoAllowed; ?>"
-                data-views-used="<?php echo (int)($v['views_used'] ?? 0); ?>"
-                data-views-remaining="<?php echo $videoRemaining; ?>"
-                data-half-seconds="<?php echo (int)($v['half_watch_seconds'] ?? 30); ?>"
-                data-is-blocked="<?php echo $isBlockedVideo ? '1' : '0'; ?>"
-                data-video-type="<?php echo h((string)($v['video_type'] ?? '')); ?>"
-              <?php else: ?>
-                disabled
-              <?php endif; ?>
+            <div
+              class="acc-item acc-item--media<?php echo ($isBlockedVideo ? ' is-blocked' : ''); ?>"
             >
               <div class="acc-item__body">
                 <div class="acc-item__title">🎥 <?php echo h((string)$v['title']); ?></div>
@@ -464,12 +385,24 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
                 <?php endif; ?>
               </div>
 
-              <?php if ($isLectureOpen): ?>
-                <div class="acc-item__lock"><?php echo $isBlockedVideo ? '⛔' : '✅'; ?></div>
-              <?php else: ?>
-                <div class="acc-item__lock">🔒</div>
-              <?php endif; ?>
-            </button>
+              <div class="acc-item__side">
+                <?php if ($isLectureOpen && !$isBlockedVideo): ?>
+                  <a
+                    class="acc-modal-btn acc-modal-btn--primary"
+                    href="lecture_video_player.php?video_id=<?php echo $videoId; ?>"
+                    target="_blank"
+                  >فتح المشغل</a>
+                <?php elseif ($isLectureOpen): ?>
+                  <button class="acc-modal-btn acc-modal-btn--ghost" type="button" disabled>انتهت المشاهدات</button>
+                <?php endif; ?>
+
+                <?php if ($isLectureOpen): ?>
+                  <div class="acc-item__lock"><?php echo $isBlockedVideo ? '⛔' : '✅'; ?></div>
+                <?php else: ?>
+                  <div class="acc-item__lock">🔒</div>
+                <?php endif; ?>
+              </div>
+            </div>
           <?php endforeach; ?>
         </div>
       <?php endif; ?>
@@ -484,22 +417,8 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
         <div style="font-weight:900;color:var(--muted);">لا توجد ملفات PDF داخل هذه المحاضرة.</div>
       <?php else: ?>
         <?php if ($isLectureOpen): ?>
-          <div class="acc-pdfShell">
-            <div class="acc-pdfPlaceholder" id="lecturePdfPlaceholder"<?php echo $selectedPdfId > 0 ? ' hidden' : ''; ?>>
-              اختر ملف الـ PDF المطلوب ثم اضغط <b>عرض</b> لفتحه داخل المحاضرة.
-            </div>
-            <div class="acc-pdfViewer" id="lecturePdfViewer"<?php echo $selectedPdfId > 0 ? '' : ' hidden'; ?>>
-              <iframe
-                id="lecturePdfFrame"
-                title="Lecture PDF"
-                src="<?php echo $selectedPdfId > 0 ? 'lecture_pdf.php?pdf_id=' . $selectedPdfId . '#toolbar=0&navpanes=0&scrollbar=0' : 'about:blank'; ?>"
-                loading="lazy"
-              ></iframe>
-              <div class="acc-pdfOverlay">
-                <span class="acc-pdfOverlay__chip"><?php echo h($studentWatermark); ?></span>
-              </div>
-            </div>
-            <div class="acc-playerNotice">📑 يتم فتح ملف الـ PDF داخل المحاضرة فقط بعد الضغط على زر "عرض".</div>
+          <div class="acc-playerNotice">
+            📑 تم إلغاء عرض ملفات الـ PDF داخل صفحة التفاصيل. اضغط على <b>عرض</b> لفتح صفحة مستقلة لمشاهدة الملف.
           </div>
         <?php endif; ?>
 
@@ -507,7 +426,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
           <?php foreach ($pdfs as $p): ?>
             <?php $pdfId = (int)($p['id'] ?? 0); ?>
             <div
-              class="acc-item acc-item--media<?php echo ($selectedPdfId === $pdfId ? ' is-active' : ''); ?>"
+              class="acc-item acc-item--media"
             >
               <div class="acc-item__body">
                 <div class="acc-item__title">📑 <?php echo h((string)$p['title']); ?></div>
@@ -524,9 +443,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
                   <button
                     class="acc-modal-btn acc-modal-btn--ghost"
                     type="button"
-                    data-pdf-select
-                    data-pdf-id="<?php echo $pdfId; ?>"
-                    data-pdf-title="<?php echo h((string)$p['title']); ?>"
+                    onclick="window.open('lecture_pdf_viewer.php?pdf_id=<?php echo $pdfId; ?>', '_blank')"
                   >عرض</button>
                   <div class="acc-item__lock">✅</div>
                 <?php else: ?>
@@ -609,396 +526,6 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
 <?php endif; ?>
 
 <script src="assets/js/theme.js"></script>
-
-<?php
-  $videosJson = json_encode($videosForJs, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP);
-  if (!is_string($videosJson)) $videosJson = '[]';
-?>
-<script>
-(function(){
-  var videos = <?php echo $videosJson; ?>;
-  var videoMap = {};
-  videos.forEach(function(video){ videoMap[String(video.id)] = video; });
-
-  var selectedVideoId = <?php echo (int)$selectedVideoId; ?>;
-  var selectedPdfId = <?php echo (int)$selectedPdfId; ?>;
-  var surface = document.getElementById('lecturePlayerSurface');
-  var placeholder = document.getElementById('lecturePlayerPlaceholder');
-  var titleEl = document.getElementById('lecturePlayerTitle');
-  var subEl = document.getElementById('lecturePlayerSub');
-  var noticeEl = document.getElementById('lecturePlayerNotice');
-  var startBtn = document.getElementById('lecturePlayerStartBtn');
-  var fullscreenBtn = document.getElementById('lecturePlayerFullscreenBtn');
-  var playerStage = document.getElementById('lecturePlayerStage');
-  var pdfFrame = document.getElementById('lecturePdfFrame');
-  var pdfViewer = document.getElementById('lecturePdfViewer');
-  var pdfPlaceholder = document.getElementById('lecturePdfPlaceholder');
-  var hasInitialPlayer = !!(surface && surface.querySelector('iframe'));
-
-  var activeWatchToken = '';
-  var countedToken = '';
-  var countdownHandle = 0;
-  var countdownStartedAt = 0;
-  var countdownHalfSeconds = 0;
-  var completionInFlight = false;
-
-  function stopCountdown() {
-    if (countdownHandle) {
-      window.clearInterval(countdownHandle);
-      countdownHandle = 0;
-    }
-    countdownStartedAt = 0;
-    countdownHalfSeconds = 0;
-    completionInFlight = false;
-  }
-
-  function updateNotice(text, isError) {
-    if (!noticeEl) return;
-    noticeEl.textContent = text;
-    noticeEl.style.borderColor = isError ? 'rgba(207,42,55,.35)' : 'rgba(44,123,229,.35)';
-    noticeEl.style.background = isError ? 'rgba(207,42,55,.08)' : 'rgba(44,123,229,.08)';
-  }
-
-  function setPlayerStageVisible(isVisible) {
-    if (playerStage) playerStage.hidden = !isVisible;
-    if (fullscreenBtn) fullscreenBtn.disabled = !isVisible;
-  }
-
-  function setPdfViewerVisible(isVisible) {
-    if (pdfViewer) pdfViewer.hidden = !isVisible;
-    if (pdfPlaceholder) pdfPlaceholder.hidden = !!isVisible;
-  }
-
-  function renderPdfSelection() {
-    document.querySelectorAll('[data-pdf-select]').forEach(function(btn){
-      var item = btn.closest('.acc-item');
-      if (item) item.classList.toggle('is-active', String(btn.getAttribute('data-pdf-id')) === String(selectedPdfId));
-    });
-
-    if (!selectedPdfId || !pdfFrame) {
-      setPdfViewerVisible(false);
-      return;
-    }
-
-    setPdfViewerVisible(true);
-    pdfFrame.src = 'lecture_pdf.php?pdf_id=' + selectedPdfId + '#toolbar=0&navpanes=0&scrollbar=0';
-  }
-
-  function renderSelection() {
-    var video = videoMap[String(selectedVideoId)] || null;
-    document.querySelectorAll('[data-video-select]').forEach(function(btn){
-      btn.classList.toggle('is-active', String(btn.getAttribute('data-video-id')) === String(selectedVideoId));
-    });
-
-    if (!video) {
-      if (titleEl) titleEl.textContent = 'بدون فيديو محدد';
-      if (subEl) subEl.textContent = 'اختر فيديو لعرض المدة والعدد المتبقي من المشاهدات.';
-      if (startBtn) startBtn.disabled = true;
-      return;
-    }
-
-    if (titleEl) titleEl.textContent = video.title || 'فيديو المحاضرة';
-    if (subEl) {
-      subEl.textContent = 'المدة: ' + (parseInt(video.duration_minutes || 0, 10)) + ' دقيقة • المتبقي: ' + (parseInt(video.views_remaining || 0, 10)) + ' من ' + (parseInt(video.views_allowed || 0, 10));
-    }
-    if (startBtn) startBtn.disabled = !!video.is_blocked;
-
-    if (video.is_blocked) {
-      updateNotice('⛔ انتهت عدد المشاهدات المسموحة لهذا الفيديو، ولن يتم تشغيله مرة أخرى.', true);
-    } else {
-      updateNotice('⏱️ اضغط "ابدأ المشاهدة" لتشغيل الفيديو. يتم احتساب مشاهدة واحدة عند الوصول إلى نصف مدة الفيديو المحددة.', false);
-    }
-  }
-
-  function escapeHtml(text) {
-    return String(text || '')
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#039;');
-  }
-
-  function renderPlaceholder(message) {
-    stopCountdown();
-    activeWatchToken = '';
-    countedToken = '';
-    if (surface) {
-      surface.innerHTML = '<div class="acc-playerPlaceholder">' + message + '</div>';
-    }
-  }
-
-  function mountPlayerHtml(html) {
-    if (!surface) return Promise.resolve();
-
-    surface.innerHTML = '';
-
-    if (!html) {
-      return Promise.resolve();
-    }
-
-    var host = document.createElement('div');
-    host.className = 'acc-playerEmbedHost';
-    host.innerHTML = html;
-    surface.appendChild(host);
-
-    var scripts = Array.prototype.slice.call(host.querySelectorAll('script'));
-    return scripts.reduce(function(chain, oldScript){
-      return chain.then(function(){
-        return new Promise(function(resolve){
-          if (!oldScript.parentNode) {
-            resolve();
-            return;
-          }
-
-          var newScript = document.createElement('script');
-          Array.prototype.slice.call(oldScript.attributes).forEach(function(attr){
-            var attrName = String(attr.name || '').toLowerCase();
-            if (
-              attrName === 'src' ||
-              attrName === 'type' ||
-              attrName === 'async' ||
-              attrName === 'defer' ||
-              attrName === 'id' ||
-              attrName.indexOf('data-') === 0
-            ) {
-              newScript.setAttribute(attr.name, attr.value);
-            }
-          });
-
-          if (newScript.src) {
-            newScript.async = false;
-            newScript.onload = resolve;
-            newScript.onerror = resolve;
-          } else {
-            newScript.text = oldScript.text || oldScript.textContent || '';
-          }
-
-          oldScript.parentNode.replaceChild(newScript, oldScript);
-
-          if (!newScript.src) {
-            resolve();
-          }
-        });
-      });
-    }, Promise.resolve());
-  }
-
-  function syncVideoStats(videoId, stats) {
-    var video = videoMap[String(videoId)];
-    if (!video || !stats) return;
-    video.views_allowed = parseInt(stats.allowed || video.views_allowed || 1, 10);
-    video.views_used = parseInt(stats.used || 0, 10);
-    video.views_remaining = parseInt(stats.remaining || 0, 10);
-    video.is_blocked = video.views_remaining <= 0;
-
-    var btn = document.querySelector('[data-video-select][data-video-id="' + videoId + '"]');
-    if (btn) {
-      btn.setAttribute('data-views-allowed', video.views_allowed);
-      btn.setAttribute('data-views-used', video.views_used);
-      btn.setAttribute('data-views-remaining', video.views_remaining);
-      btn.setAttribute('data-is-blocked', video.is_blocked ? '1' : '0');
-      btn.classList.toggle('is-blocked', video.is_blocked);
-
-      var desc = btn.querySelector('.acc-item__desc');
-      if (desc) {
-        desc.innerHTML = '👁️ المشاهدات المستخدمة: <b>' + video.views_used + '</b> / ' + video.views_allowed + ' • المتبقي: <b>' + video.views_remaining + '</b>';
-      }
-
-      var badge = btn.querySelector('.acc-item__badge');
-      if (badge) {
-        badge.textContent = video.is_blocked ? 'انتهت عدد المشاهدات' : 'تشغيل داخل المنصة';
-        badge.classList.toggle('acc-item__badge--danger', video.is_blocked);
-      }
-
-      var lock = btn.querySelector('.acc-item__lock');
-      if (lock) lock.textContent = video.is_blocked ? '⛔' : '✅';
-    }
-
-    renderSelection();
-  }
-
-  function completeWatchIfReady(force) {
-    if (!activeWatchToken || !selectedVideoId || completionInFlight) return;
-    if (!force && (!countdownStartedAt || !countdownHalfSeconds)) return;
-
-    var elapsed = countdownStartedAt ? Math.floor((Date.now() - countdownStartedAt) / 1000) : 0;
-    if (!force && elapsed < countdownHalfSeconds) return;
-
-    completionInFlight = true;
-    var body = new URLSearchParams();
-    body.set('action', 'complete');
-    body.set('video_id', selectedVideoId);
-    body.set('watch_token', activeWatchToken);
-
-    fetch('api/lecture_video_api.php', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'},
-      body: body.toString()
-    }).then(function(res){
-      return res.json();
-    }).then(function(data){
-      completionInFlight = false;
-      if (data && data.ok) {
-        countedToken = activeWatchToken;
-        stopCountdown();
-        if (data.stats) syncVideoStats(selectedVideoId, data.stats);
-        updateNotice('✅ ' + (data.message || 'تم احتساب المشاهدة بنجاح.'), false);
-      } else if (data && data.stats) {
-        syncVideoStats(selectedVideoId, data.stats);
-        updateNotice('⛔ ' + (data.message || 'انتهت عدد المشاهدات المسموحة.'), true);
-      }
-    }).catch(function(){
-      completionInFlight = false;
-    });
-  }
-
-  function startCountdown(halfSeconds) {
-    stopCountdown();
-    countdownStartedAt = Date.now();
-    countdownHalfSeconds = Math.max(30, parseInt(halfSeconds || 30, 10));
-    countdownHandle = window.setInterval(function(){
-      var elapsed = Math.floor((Date.now() - countdownStartedAt) / 1000);
-      var remaining = Math.max(0, countdownHalfSeconds - elapsed);
-      updateNotice('⏱️ المشاهدة ستُحتسب بعد ' + remaining + ' ثانية من المشاهدة المستمرة داخل المنصة.', false);
-      if (remaining <= 0) {
-        completeWatchIfReady(true);
-      }
-    }, 1000);
-  }
-
-  function startCurrentVideo() {
-    var video = videoMap[String(selectedVideoId)] || null;
-    if (!video) {
-      setPlayerStageVisible(false);
-      updateNotice('⚠️ من فضلك اختر فيديو من القائمة أولاً ثم اضغط "ابدأ المشاهدة".', true);
-      return;
-    }
-    if (video.is_blocked) {
-      setPlayerStageVisible(false);
-      updateNotice('⛔ انتهت عدد المشاهدات المسموحة لهذا الفيديو، ولن يتم تشغيله.', true);
-      return;
-    }
-
-    setPlayerStageVisible(true);
-    renderPlaceholder('⏳ جاري تجهيز الفيديو داخل المنصة...');
-
-    if (startBtn) {
-      startBtn.disabled = true;
-      startBtn.textContent = '⏳ جاري تجهيز الفيديو...';
-    }
-
-    var body = new URLSearchParams();
-    body.set('action', 'start');
-    body.set('video_id', selectedVideoId);
-
-    fetch('api/lecture_video_api.php', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'},
-      body: body.toString()
-    }).then(function(res){
-      return res.json();
-    }).then(function(data){
-      if (startBtn) {
-        startBtn.disabled = false;
-        startBtn.textContent = '▶️ ابدأ المشاهدة';
-      }
-
-      if (!data || !data.ok) {
-        setPlayerStageVisible(false);
-        if (data && data.stats) syncVideoStats(selectedVideoId, data.stats);
-        updateNotice('⛔ ' + ((data && data.message) || 'تعذر تشغيل الفيديو داخل المنصة.'), true);
-        return;
-      }
-
-      setPlayerStageVisible(true);
-      activeWatchToken = data.watch_token || '';
-      countedToken = '';
-      mountPlayerHtml(data.player_html || '').then(function(){
-        if (data.stats) syncVideoStats(selectedVideoId, data.stats);
-        startCountdown(parseInt(data.half_seconds || video.half_watch_seconds || 30, 10));
-        updateNotice('▶️ تم تشغيل الفيديو داخل بلاير المنصة. سيتم احتساب المشاهدة عند الوصول إلى نصف الوقت المحدد.', false);
-      });
-    }).catch(function(){
-      if (startBtn) {
-        startBtn.disabled = false;
-        startBtn.textContent = '▶️ ابدأ المشاهدة';
-      }
-      setPlayerStageVisible(false);
-      updateNotice('❌ حدث خطأ في الاتصال أثناء تجهيز الفيديو.', true);
-    });
-  }
-
-  document.querySelectorAll('[data-video-select]').forEach(function(btn){
-    btn.addEventListener('click', function(){
-      var nextId = parseInt(btn.getAttribute('data-video-id') || '0', 10);
-      if (!nextId || nextId === selectedVideoId) return;
-      completeWatchIfReady(false);
-      selectedVideoId = nextId;
-      setPlayerStageVisible(false);
-      renderPlaceholder('تم اختيار فيديو جديد. اضغط <b>ابدأ المشاهدة</b> لتشغيله داخل المنصة.');
-      renderSelection();
-    });
-  });
-
-  document.querySelectorAll('[data-pdf-select]').forEach(function(btn){
-    btn.addEventListener('click', function(){
-      var nextId = parseInt(btn.getAttribute('data-pdf-id') || '0', 10);
-      if (!nextId) return;
-      selectedPdfId = nextId;
-      renderPdfSelection();
-    });
-  });
-
-  if (startBtn) {
-    startBtn.addEventListener('click', startCurrentVideo);
-  }
-
-  if (fullscreenBtn && playerStage) {
-    fullscreenBtn.addEventListener('click', function(){
-      if (document.fullscreenElement) {
-        document.exitFullscreen && document.exitFullscreen();
-        return;
-      }
-      if (playerStage.requestFullscreen) {
-        playerStage.requestFullscreen();
-      }
-    });
-
-    document.addEventListener('fullscreenchange', function(){
-      fullscreenBtn.textContent = document.fullscreenElement ? '🡼 إغلاق التكبير' : '⛶ تكبير البلاير';
-    });
-  }
-
-  document.addEventListener('visibilitychange', function(){
-    if (document.visibilityState === 'hidden') completeWatchIfReady(false);
-  });
-
-  window.addEventListener('beforeunload', function(){
-    if (!activeWatchToken || !countdownStartedAt) return;
-    var elapsed = Math.floor((Date.now() - countdownStartedAt) / 1000);
-    if (elapsed < countdownHalfSeconds || countedToken === activeWatchToken) return;
-
-    var body = new URLSearchParams();
-    body.set('action', 'complete');
-    body.set('video_id', selectedVideoId);
-    body.set('watch_token', activeWatchToken);
-    if (navigator.sendBeacon) {
-      navigator.sendBeacon('api/lecture_video_api.php', new Blob([body.toString()], {type: 'application/x-www-form-urlencoded; charset=UTF-8'}));
-    }
-  });
-
-  document.addEventListener('contextmenu', function(e){ e.preventDefault(); });
-  document.addEventListener('mousedown', function(e){ if (e.button === 2) e.preventDefault(); }, true);
-
-  renderPdfSelection();
-  setPlayerStageVisible(!!selectedVideoId);
-  if (!hasInitialPlayer) {
-    renderPlaceholder('اختر الفيديو من القائمة ثم اضغط <b>ابدأ المشاهدة</b> ليتم تشغيله داخل بلاير المنصة.');
-  }
-  renderSelection();
-})();
-</script>
 
 <!-- ✅ Purchase / Code Modals (same as account_course.php) -->
 <div id="accModalBackdrop" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.55);align-items:center;justify-content:center;" role="dialog" aria-modal="true">
