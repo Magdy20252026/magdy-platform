@@ -457,7 +457,7 @@ $sessions = $pdo->query("
 $selectedSessionId = (int)($_GET['session_id'] ?? 0);
 if ($selectedSessionId <= 0 && !empty($sessions)) {
   foreach ($sessions as $sessionItem) {
-    if (!empty($sessionItem['is_open'])) {
+    if ((int)($sessionItem['is_open'] ?? 0) === 1) {
       $selectedSessionId = (int)$sessionItem['id'];
       break;
     }
