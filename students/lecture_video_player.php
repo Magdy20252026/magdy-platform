@@ -192,7 +192,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
           <button class="acc-modal-btn acc-modal-btn--ghost" type="button" id="lecturePlayerCtrlForward" aria-label="التقديم 10 ثواني" disabled>⏩ تقديم 10ث</button>
           <button class="acc-modal-btn acc-modal-btn--ghost" type="button" id="lecturePlayerCtrlFullscreen" aria-label="تكبير شاشة المشغل" disabled>⛶ تكبير</button>
           <label class="acc-platformControls__label" for="lecturePlayerCtrlVolume">الصوت</label>
-          <input class="acc-platformControls__range" id="lecturePlayerCtrlVolume" type="range" min="0" max="100" step="1" value="100" disabled>
+          <input class="acc-platformControls__range" id="lecturePlayerCtrlVolume" type="range" min="0" max="100" step="1" value="100" aria-label="مستوى صوت الفيديو" aria-valuetext="100%" disabled>
           <label class="acc-platformControls__label" for="lecturePlayerCtrlQuality">الجودة</label>
           <select class="acc-platformControls__select" id="lecturePlayerCtrlQuality" disabled>
             <option value="auto">تلقائي</option>
@@ -426,7 +426,9 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
     try { currentVolume = youtubePlayer.getVolume(); } catch(e) {}
     try { isMuted = !!youtubePlayer.isMuted(); } catch(e) {}
     if (!isFinite(currentVolume)) currentVolume = 100;
-    ctrlVolumeInput.value = String(isMuted ? 0 : Math.max(0, Math.min(100, Math.round(currentVolume))));
+    var normalizedVolume = isMuted ? 0 : Math.max(0, Math.min(100, Math.round(currentVolume)));
+    ctrlVolumeInput.value = String(normalizedVolume);
+    ctrlVolumeInput.setAttribute('aria-valuetext', normalizedVolume + '%');
   }
 
   function initYoutubePlatformControls(frame) {
@@ -727,12 +729,13 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
       var nextVolume = parseInt(ctrlVolumeInput.value || '100', 10);
       if (!isFinite(nextVolume)) nextVolume = 100;
       nextVolume = Math.max(0, Math.min(100, nextVolume));
+      ctrlVolumeInput.setAttribute('aria-valuetext', nextVolume + '%');
       if (nextVolume === 0) {
         youtubePlayer.mute();
       } else {
         youtubePlayer.unMute();
+        youtubePlayer.setVolume(nextVolume);
       }
-      youtubePlayer.setVolume(nextVolume);
     });
   }
 
