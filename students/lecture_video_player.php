@@ -188,6 +188,21 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
         </div>
       </div>
 
+      <div class="acc-platformControls" id="lecturePlayerControls" hidden>
+        <button class="acc-modal-btn acc-modal-btn--primary" type="button" id="lecturePlayerCtrlPlayPause" aria-label="تشغيل أو إيقاف الفيديو" disabled>▶️ تشغيل</button>
+        <button class="acc-modal-btn acc-modal-btn--ghost" type="button" id="lecturePlayerCtrlBack" aria-label="الرجوع 10 ثواني" disabled>⏪ رجوع 10ث</button>
+        <button class="acc-modal-btn acc-modal-btn--ghost" type="button" id="lecturePlayerCtrlForward" aria-label="التقديم 10 ثواني" disabled>⏩ تقديم 10ث</button>
+        <button class="acc-modal-btn acc-modal-btn--ghost" type="button" id="lecturePlayerCtrlFullscreen" aria-label="تكبير شاشة المشغل" disabled>⛶ تكبير</button>
+        <label class="acc-platformControls__label" for="lecturePlayerCtrlQuality">الجودة</label>
+        <select class="acc-platformControls__select" id="lecturePlayerCtrlQuality" disabled>
+          <option value="auto">تلقائي</option>
+        </select>
+        <label class="acc-platformControls__label" for="lecturePlayerCtrlSpeed">السرعة</label>
+        <select class="acc-platformControls__select" id="lecturePlayerCtrlSpeed" disabled>
+          <option value="1">1x</option>
+        </select>
+      </div>
+
       <div class="acc-playerNotice" id="lecturePlayerNotice">
         <?php if (!empty($stats['blocked'])): ?>
           ⛔ لا يمكن تشغيل هذا الفيديو لأن عدد المشاهدات المسموحة انتهى.
@@ -211,6 +226,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
     viewsAllowed: <?php echo (int)($stats['allowed'] ?? 1); ?>,
     viewsUsed: <?php echo (int)($stats['used'] ?? 0); ?>,
     viewsRemaining: <?php echo (int)($stats['remaining'] ?? 0); ?>,
+    videoType: <?php echo json_encode((string)($video['video_type'] ?? ''), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>,
     isBlocked: <?php echo !empty($stats['blocked']) ? 'true' : 'false'; ?>,
     halfSeconds: <?php echo (int)$halfSeconds; ?>
   };
@@ -224,6 +240,13 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   var viewsUsedEl = document.getElementById('videoViewsUsed');
   var viewsRemainingEl = document.getElementById('videoViewsRemaining');
   var halfSecondsEl = document.getElementById('videoHalfSeconds');
+  var platformControls = document.getElementById('lecturePlayerControls');
+  var ctrlPlayPauseBtn = document.getElementById('lecturePlayerCtrlPlayPause');
+  var ctrlBackBtn = document.getElementById('lecturePlayerCtrlBack');
+  var ctrlForwardBtn = document.getElementById('lecturePlayerCtrlForward');
+  var ctrlFullscreenBtn = document.getElementById('lecturePlayerCtrlFullscreen');
+  var ctrlQualitySelect = document.getElementById('lecturePlayerCtrlQuality');
+  var ctrlSpeedSelect = document.getElementById('lecturePlayerCtrlSpeed');
 
   var activeWatchToken = '';
   var countedToken = '';
@@ -234,12 +257,15 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   var requestInFlight = false;
   var protectedPageClosed = false;
   var devtoolsDetectionStrikes = 0;
+  var youtubePlayer = null;
+  var youtubeApiReadyPromise = null;
   // tuned for typical browser UI gaps so docked DevTools detection triggers before playback continues
   const devtoolsWidthGapThreshold = 160;
   const devtoolsHeightGapThreshold = 140;
-  const devtoolsStrikeThreshold = 3;
-  const devtoolsCheckIntervalMs = 1200;
+  const devtoolsStrikeThreshold = 2;
+  const devtoolsCheckIntervalMs = 400;
   const fallbackHalfSeconds = 30;
+  const youtubeStatePlaying = 1;
 
   function ensureValidHalfSeconds(nextValue) {
     return Math.max(5, parseInt(nextValue || videoState.halfSeconds || fallbackHalfSeconds, 10));
@@ -255,6 +281,8 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   function renderPlaceholder(message) {
     if (!surface) return;
     surface.innerHTML = '<div class="acc-playerPlaceholder">' + message + '</div>';
+    if (playerStage && playerStage.classList) playerStage.classList.remove('acc-playerStage--platformControls');
+    if (platformControls) platformControls.hidden = true;
   }
 
   function mountPlayerHtml(html) {
@@ -305,6 +333,118 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
         });
       });
     }, Promise.resolve());
+  }
+
+  function setPlatformControlsEnabled(enabled) {
+    [ctrlPlayPauseBtn, ctrlBackBtn, ctrlForwardBtn, ctrlFullscreenBtn, ctrlQualitySelect, ctrlSpeedSelect].forEach(function(el){
+      if (el) el.disabled = !enabled;
+    });
+  }
+
+  function setPlayPauseLabel(isPlaying) {
+    if (!ctrlPlayPauseBtn) return;
+    ctrlPlayPauseBtn.textContent = isPlaying ? '⏸️ إيقاف' : '▶️ تشغيل';
+  }
+
+  function setPlatformControlsVisible(visible) {
+    if (platformControls) platformControls.hidden = !visible;
+    if (playerStage && playerStage.classList) {
+      if (visible) playerStage.classList.add('acc-playerStage--platformControls');
+      else playerStage.classList.remove('acc-playerStage--platformControls');
+    }
+  }
+
+  function loadYoutubeApi() {
+    if (window.YT && window.YT.Player) return Promise.resolve();
+    if (youtubeApiReadyPromise) return youtubeApiReadyPromise;
+
+    youtubeApiReadyPromise = new Promise(function(resolve){
+      var previous = window.onYouTubeIframeAPIReady;
+      window.onYouTubeIframeAPIReady = function(){
+        if (typeof previous === 'function') previous();
+        resolve();
+      };
+
+      var exists = document.querySelector('script[src*="youtube.com/iframe_api"]');
+      if (exists) return;
+      var script = document.createElement('script');
+      script.src = 'https://www.youtube.com/iframe_api';
+      script.async = true;
+      document.head.appendChild(script);
+    });
+
+    return youtubeApiReadyPromise;
+  }
+
+  function refreshYoutubeQualityOptions() {
+    if (!youtubePlayer || !ctrlQualitySelect) return;
+    var levels = [];
+    try { levels = youtubePlayer.getAvailableQualityLevels() || []; } catch(e) {}
+
+    ctrlQualitySelect.innerHTML = '<option value="auto">تلقائي</option>';
+    levels.forEach(function(level){
+      var opt = document.createElement('option');
+      opt.value = level;
+      opt.textContent = level;
+      ctrlQualitySelect.appendChild(opt);
+    });
+
+    var current = '';
+    try { current = youtubePlayer.getPlaybackQuality() || 'auto'; } catch(e) {}
+    if (current !== '' && ctrlQualitySelect.querySelector('option[value="' + current + '"]')) {
+      ctrlQualitySelect.value = current;
+    } else {
+      ctrlQualitySelect.value = 'auto';
+    }
+  }
+
+  function refreshYoutubeSpeedOptions() {
+    if (!youtubePlayer || !ctrlSpeedSelect) return;
+    var rates = [];
+    try { rates = youtubePlayer.getAvailablePlaybackRates() || [1]; } catch(e) { rates = [1]; }
+
+    ctrlSpeedSelect.innerHTML = '';
+    rates.forEach(function(rate){
+      var val = String(rate);
+      var opt = document.createElement('option');
+      opt.value = val;
+      opt.textContent = val + 'x';
+      ctrlSpeedSelect.appendChild(opt);
+    });
+
+    var currentRate = 1;
+    try { currentRate = youtubePlayer.getPlaybackRate() || 1; } catch(e) {}
+    ctrlSpeedSelect.value = String(currentRate);
+  }
+
+  function initYoutubePlatformControls(frame) {
+    if (!frame) {
+      setPlatformControlsVisible(false);
+      setPlatformControlsEnabled(false);
+      return;
+    }
+
+    frame.id = frame.id || 'lectureVideoFrame';
+    loadYoutubeApi().then(function(){
+      if (!window.YT || !window.YT.Player) return;
+      youtubePlayer = new window.YT.Player(frame.id, {
+        events: {
+          onReady: function(){
+            setPlatformControlsVisible(true);
+            setPlatformControlsEnabled(true);
+            setPlayPauseLabel(false);
+            refreshYoutubeQualityOptions();
+            refreshYoutubeSpeedOptions();
+          },
+          onStateChange: function(event){
+            setPlayPauseLabel(event && event.data === youtubeStatePlaying);
+          }
+        }
+      });
+    }).catch(function(){
+      setPlatformControlsVisible(false);
+      setPlatformControlsEnabled(false);
+    });
   }
 
   function syncStats(stats) {
@@ -448,9 +588,21 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
         videoState.halfSeconds = ensureValidHalfSeconds(data.half_seconds);
         if (halfSecondsEl) halfSecondsEl.textContent = videoState.halfSeconds;
       }
+      if (data.video && typeof data.video.video_type !== 'undefined') {
+        videoState.videoType = String(data.video.video_type || '');
+      }
 
       mountPlayerHtml(data.player_html || '').then(function(){
         if (data.stats) syncStats(data.stats);
+        var mountedFrame = surface ? surface.querySelector('iframe') : null;
+        var isYoutube = mountedFrame && /youtube(?:-nocookie)?\.com/i.test(String(mountedFrame.src || ''));
+        if (isYoutube || String(videoState.videoType || '').toLowerCase() === 'youtube') {
+          initYoutubePlatformControls(mountedFrame);
+        } else {
+          youtubePlayer = null;
+          setPlatformControlsVisible(false);
+          setPlatformControlsEnabled(false);
+        }
         startBackgroundTracking(parseInt(data.watched_seconds || 0, 10));
         updateNotice('▶️ تم فتح الفيديو داخل مشغل المنصة. المؤقت الخلفي بدأ الآن وسيتم احتساب المشاهدة بعد تجاوز نصف المدة.', false);
       });
@@ -485,18 +637,106 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   }
 
   if (fullscreenBtn && playerStage) {
-    fullscreenBtn.addEventListener('click', function(){
+    var toggleFullscreen = function(){
       if (document.fullscreenElement) {
         if (document.exitFullscreen) document.exitFullscreen();
         return;
       }
       if (playerStage.requestFullscreen) playerStage.requestFullscreen();
-    });
+    };
+
+    fullscreenBtn.addEventListener('click', toggleFullscreen);
+    if (ctrlFullscreenBtn) ctrlFullscreenBtn.addEventListener('click', toggleFullscreen);
 
     document.addEventListener('fullscreenchange', function(){
       fullscreenBtn.textContent = document.fullscreenElement ? '🡼 إغلاق التكبير' : '⛶ تكبير المشغل';
     });
   }
+
+  if (ctrlPlayPauseBtn) {
+    ctrlPlayPauseBtn.addEventListener('click', function(){
+      if (!youtubePlayer) return;
+      var state = -1;
+      try { state = youtubePlayer.getPlayerState(); } catch(e) {}
+      if (state === youtubeStatePlaying) {
+        youtubePlayer.pauseVideo();
+      } else {
+        youtubePlayer.playVideo();
+      }
+    });
+  }
+
+  if (ctrlBackBtn) {
+    ctrlBackBtn.addEventListener('click', function(){
+      if (!youtubePlayer) return;
+      var current = 0;
+      try { current = youtubePlayer.getCurrentTime() || 0; } catch(e) {}
+      youtubePlayer.seekTo(Math.max(0, current - 10), true);
+    });
+  }
+
+  if (ctrlForwardBtn) {
+    ctrlForwardBtn.addEventListener('click', function(){
+      if (!youtubePlayer) return;
+      var current = 0;
+      var duration = 0;
+      try { current = youtubePlayer.getCurrentTime() || 0; } catch(e) {}
+      try { duration = youtubePlayer.getDuration() || 0; } catch(e) {}
+      var nextTime = current + 10;
+      if (duration > 0) nextTime = Math.min(nextTime, duration);
+      youtubePlayer.seekTo(Math.max(0, nextTime), true);
+    });
+  }
+
+  if (ctrlQualitySelect) {
+    ctrlQualitySelect.addEventListener('change', function(){
+      if (!youtubePlayer) return;
+      var nextQuality = String(ctrlQualitySelect.value || 'auto');
+      if (nextQuality === 'auto') {
+        return;
+      }
+      youtubePlayer.setPlaybackQuality(nextQuality);
+    });
+  }
+
+  if (ctrlSpeedSelect) {
+    ctrlSpeedSelect.addEventListener('change', function(){
+      if (!youtubePlayer) return;
+      var nextRate = parseFloat(ctrlSpeedSelect.value || '1');
+      if (!isFinite(nextRate) || nextRate <= 0) nextRate = 1;
+      youtubePlayer.setPlaybackRate(nextRate);
+    });
+  }
+
+  document.addEventListener('keydown', function(e){
+    if (!youtubePlayer || !platformControls || platformControls.hidden) return;
+    var target = e.target;
+    if (target && target.tagName) {
+      var tagName = String(target.tagName).toUpperCase();
+      if (tagName === 'INPUT' || tagName === 'TEXTAREA' || tagName === 'SELECT') return;
+    }
+
+    var key = String(e.key || '').toLowerCase();
+    if (key === ' ' || key === 'k') {
+      e.preventDefault();
+      if (ctrlPlayPauseBtn) ctrlPlayPauseBtn.click();
+      return;
+    }
+    if (key === 'arrowleft') {
+      e.preventDefault();
+      if (ctrlBackBtn) ctrlBackBtn.click();
+      return;
+    }
+    if (key === 'arrowright') {
+      e.preventDefault();
+      if (ctrlForwardBtn) ctrlForwardBtn.click();
+      return;
+    }
+    if (key === 'f') {
+      e.preventDefault();
+      if (ctrlFullscreenBtn) ctrlFullscreenBtn.click();
+    }
+  });
 
   document.addEventListener('contextmenu', function(e){ e.preventDefault(); });
   document.addEventListener('mousedown', function(e){ if (e.button === 2) e.preventDefault(); }, true);

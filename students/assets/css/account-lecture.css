@@ -297,6 +297,41 @@
   line-height: 1.8;
 }
 
+.acc-platformControls{
+  display:flex;
+  flex-wrap:wrap;
+  gap:10px;
+  align-items:center;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(44,123,229,.25);
+  background: rgba(44,123,229,.06);
+}
+
+.acc-platformControls__label{
+  font-weight: 900;
+  color: var(--text);
+}
+
+.acc-platformControls__select{
+  min-width: 92px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--text);
+  padding: 8px 10px;
+  font-weight: 900;
+  font-family: inherit;
+}
+
+.acc-playerStage--platformControls .acc-playerSurface::after{
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: auto;
+}
+
 .acc-viewerPage{
   padding: 14px 0 28px;
 }
