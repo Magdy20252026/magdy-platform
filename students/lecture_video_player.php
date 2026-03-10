@@ -234,11 +234,9 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   var requestInFlight = false;
   var protectedPageClosed = false;
   var devtoolsDetectionStrikes = 0;
-  var baselineWidthGap = Math.abs(window.outerWidth - window.innerWidth);
-  var baselineHeightGap = Math.abs(window.outerHeight - window.innerHeight);
+  // tuned for typical browser UI gaps so docked DevTools detection triggers before playback continues
   const devtoolsWidthGapThreshold = 160;
   const devtoolsHeightGapThreshold = 140;
-  const devtoolsGapDeltaThreshold = 120;
   const devtoolsStrikeThreshold = 3;
   const devtoolsCheckIntervalMs = 1200;
   const fallbackHalfSeconds = 30;
@@ -540,20 +538,14 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
 
     var widthGap = Math.abs(window.outerWidth - window.innerWidth);
     var heightGap = Math.abs(window.outerHeight - window.innerHeight);
-    var widthGapDelta = Math.max(0, widthGap - baselineWidthGap);
-    var heightGapDelta = Math.max(0, heightGap - baselineHeightGap);
     var devtoolsOpen =
       widthGap > devtoolsWidthGapThreshold ||
-      heightGap > devtoolsHeightGapThreshold ||
-      widthGapDelta > devtoolsGapDeltaThreshold ||
-      heightGapDelta > devtoolsGapDeltaThreshold;
+      heightGap > devtoolsHeightGapThreshold;
 
     if (devtoolsOpen) {
       devtoolsDetectionStrikes++;
     } else {
       devtoolsDetectionStrikes = 0;
-      baselineWidthGap = Math.min(baselineWidthGap, widthGap);
-      baselineHeightGap = Math.min(baselineHeightGap, heightGap);
     }
 
     if (devtoolsDetectionStrikes >= devtoolsStrikeThreshold) {
