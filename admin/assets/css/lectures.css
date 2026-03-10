@@ -176,3 +176,34 @@
 .link.info{ border-color: rgba(59,130,246,.35) }
 .link.warn{ border-color: rgba(249,115,22,.35) }
 .link.danger{ border-color: rgba(239,68,68,.35) }
+
+.lecture-manage-grid{
+  padding:14px;
+  display:grid;
+  grid-template-columns: repeat(2, minmax(0,1fr));
+  gap:12px;
+}
+@media (max-width: 980px){
+  .lecture-manage-grid{grid-template-columns: 1fr}
+}
+.lecture-manage-card{
+  border:2px solid var(--line);
+  background: var(--panel2);
+  border-radius: 18px;
+  padding: 14px;
+}
+.lecture-manage-title{
+  font-weight:1000;
+  margin-bottom:10px;
+}
+.lecture-manage-list{
+  display:grid;
+  gap:8px;
+  color: var(--muted);
+  font-weight:900;
+}
+.lecture-manage-list b{color:var(--text)}
+.lecture-manage-form{
+  display:grid;
+  gap:12px;
+}

@@ -213,6 +213,21 @@ function fetch_groups_filtered(PDO $pdo, int $gradeId, int $centerId): array {
   return $stmt->fetchAll();
 }
 
+function fetch_student_summary(PDO $pdo, int $studentId): ?array {
+  if ($studentId <= 0) return null;
+
+  $stmt = $pdo->prepare("
+    SELECT s.id, s.full_name, s.student_phone, s.barcode, g.name AS grade_name
+    FROM students s
+    INNER JOIN grades g ON g.id = s.grade_id
+    WHERE s.id=?
+    LIMIT 1
+  ");
+  $stmt->execute([$studentId]);
+  $row = $stmt->fetch(PDO::FETCH_ASSOC);
+  return $row ?: null;
+}
+
 /* CREATE */
 if (($_POST['action'] ?? '') === 'create') {
   $fullName = trim((string)($_POST['full_name'] ?? ''));
@@ -559,6 +574,63 @@ $stmt->execute($params);
 $students = $stmt->fetchAll();
 $totalStudents = count($students);
 
+$studentCoursesId = (int)($_GET['student_courses'] ?? 0);
+$studentCoursesRow = fetch_student_summary($pdo, $studentCoursesId);
+$studentCourses = [];
+if ($studentCoursesRow) {
+  $stmt = $pdo->prepare("
+    SELECT
+      c.id,
+      c.name,
+      c.access_type AS course_access_type,
+      sce.access_type AS enrollment_access_type,
+      sce.created_at
+    FROM student_course_enrollments sce
+    INNER JOIN courses c ON c.id = sce.course_id
+    WHERE sce.student_id = ?
+    ORDER BY sce.created_at DESC, c.name ASC
+  ");
+  $stmt->execute([$studentCoursesId]);
+  $studentCourses = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+}
+
+$studentLecturesId = (int)($_GET['student_lectures'] ?? 0);
+$studentLecturesRow = fetch_student_summary($pdo, $studentLecturesId);
+$studentLectures = [];
+if ($studentLecturesRow) {
+  $stmt = $pdo->prepare("
+    SELECT *
+    FROM (
+      SELECT
+        l.id,
+        l.name,
+        c.name AS course_name,
+        sle.access_type,
+        sle.created_at
+      FROM student_lecture_enrollments sle
+      INNER JOIN lectures l ON l.id = sle.lecture_id
+      INNER JOIN courses c ON c.id = sle.course_id
+      WHERE sle.student_id = ?
+
+      UNION
+
+      SELECT
+        l.id,
+        l.name,
+        c.name AS course_name,
+        CONCAT('course:', sce.access_type) AS access_type,
+        sce.created_at
+      FROM student_course_enrollments sce
+      INNER JOIN courses c ON c.id = sce.course_id
+      INNER JOIN lectures l ON l.course_id = c.id
+      WHERE sce.student_id = ?
+    ) lecture_rows
+    ORDER BY created_at DESC, name ASC
+  ");
+  $stmt->execute([$studentLecturesId, $studentLecturesId]);
+  $studentLectures = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+}
+
 /* Edit mode (opens modal) */
 $editId = (int)($_GET['edit'] ?? 0);
 $editRow = null;
@@ -743,6 +815,102 @@ if ($adminRole !== 'مدير') {
           </div>
         </div>
 
+        <?php if ($studentCoursesRow): ?>
+          <div class="students-manage-card">
+            <div class="cardx-head">
+              <div class="cardx-title">
+                <span class="cardx-badge">📚</span>
+                <h2>كورسات الطالب: <?php echo h((string)$studentCoursesRow['full_name']); ?></h2>
+              </div>
+              <div class="cardx-actions">
+                <a class="btn ghost" href="students.php">إغلاق</a>
+              </div>
+            </div>
+
+            <div class="students-manage-meta">
+              <span class="pillx">📱 <?php echo h((string)$studentCoursesRow['student_phone']); ?></span>
+              <span class="pillx">🏫 <?php echo h((string)$studentCoursesRow['grade_name']); ?></span>
+              <span class="pillx">🆔 <?php echo h((string)($studentCoursesRow['barcode'] ?: ('STD-' . (int)$studentCoursesRow['id']))); ?></span>
+            </div>
+
+            <div class="table-wrap">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>الكورس</th>
+                    <th>نوع الكورس</th>
+                    <th>نوع الاشتراك</th>
+                    <th>تاريخ الاشتراك</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <?php if (!$studentCourses): ?>
+                    <tr><td colspan="5" style="text-align:center">لا يوجد كورسات مشترك بها هذا الطالب.</td></tr>
+                  <?php endif; ?>
+                  <?php foreach ($studentCourses as $idx => $courseRow): ?>
+                    <tr>
+                      <td><?php echo (int)($idx + 1); ?></td>
+                      <td><?php echo h((string)$courseRow['name']); ?></td>
+                      <td><?php echo h((string)$courseRow['course_access_type']); ?></td>
+                      <td><?php echo h((string)$courseRow['enrollment_access_type']); ?></td>
+                      <td><?php echo h((string)$courseRow['created_at']); ?></td>
+                    </tr>
+                  <?php endforeach; ?>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        <?php endif; ?>
+
+        <?php if ($studentLecturesRow): ?>
+          <div class="students-manage-card">
+            <div class="cardx-head">
+              <div class="cardx-title">
+                <span class="cardx-badge">🧑‍🏫</span>
+                <h2>محاضرات الطالب: <?php echo h((string)$studentLecturesRow['full_name']); ?></h2>
+              </div>
+              <div class="cardx-actions">
+                <a class="btn ghost" href="students.php">إغلاق</a>
+              </div>
+            </div>
+
+            <div class="students-manage-meta">
+              <span class="pillx">📱 <?php echo h((string)$studentLecturesRow['student_phone']); ?></span>
+              <span class="pillx">🏫 <?php echo h((string)$studentLecturesRow['grade_name']); ?></span>
+              <span class="pillx">🆔 <?php echo h((string)($studentLecturesRow['barcode'] ?: ('STD-' . (int)$studentLecturesRow['id']))); ?></span>
+            </div>
+
+            <div class="table-wrap">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>المحاضرة</th>
+                    <th>الكورس</th>
+                    <th>نوع الاشتراك</th>
+                    <th>تاريخ الاشتراك</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <?php if (!$studentLectures): ?>
+                    <tr><td colspan="5" style="text-align:center">لا يوجد محاضرات مشترك بها هذا الطالب.</td></tr>
+                  <?php endif; ?>
+                  <?php foreach ($studentLectures as $idx => $lectureRow): ?>
+                    <tr>
+                      <td><?php echo (int)($idx + 1); ?></td>
+                      <td><?php echo h((string)$lectureRow['name']); ?></td>
+                      <td><?php echo h((string)$lectureRow['course_name']); ?></td>
+                      <td><?php echo h((string)$lectureRow['access_type']); ?></td>
+                      <td><?php echo h((string)$lectureRow['created_at']); ?></td>
+                    </tr>
+                  <?php endforeach; ?>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        <?php endif; ?>
+
         <div class="table-wrap scroll-pro">
           <table class="table">
             <thead>
@@ -813,8 +981,8 @@ if ($adminRole !== 'مدير') {
                       📱 أجهزة الطالب
                     </button>
 
-                    <span class="link disabled" title="قريبًا">📚 الكورسات</span>
-                    <span class="link disabled" title="قريبًا">🧑‍🏫 المحاضرات</span>
+                    <a class="link info" href="students.php?student_courses=<?php echo (int)$s['id']; ?>">📚 الكورسات</a>
+                    <a class="link info" href="students.php?student_lectures=<?php echo (int)$s['id']; ?>">🧑‍🏫 المحاضرات</a>
                   </td>
                 </tr>
               <?php endforeach; ?>

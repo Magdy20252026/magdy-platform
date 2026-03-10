@@ -6,6 +6,7 @@
 // 3) If course.access_type = free => open.
 
 require __DIR__ . '/../../admin/inc/db.php';
+require_once __DIR__ . '/assessments.php';
 
 function student_has_course_access(PDO $pdo, int $studentId, int $courseId): bool {
   if ($studentId <= 0 || $courseId <= 0) return false;
@@ -68,6 +69,67 @@ function student_video_views_ensure_table(PDO $pdo): void {
   }
 }
 
+function student_video_bonus_views_ensure_table(PDO $pdo): void {
+  static $ready = false;
+  if ($ready) return;
+  $ready = true;
+
+  try {
+    $pdo->exec("
+      CREATE TABLE IF NOT EXISTS video_student_bonus_views (
+        id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+        video_id INT UNSIGNED NOT NULL,
+        student_id INT UNSIGNED NOT NULL,
+        bonus_views INT UNSIGNED NOT NULL DEFAULT 0,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (id),
+        UNIQUE KEY uniq_video_student_bonus (video_id, student_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+    ");
+  } catch (Throwable $e) {
+    // ignore
+  }
+}
+
+function student_get_video_bonus_views(PDO $pdo, int $studentId, int $videoId): int {
+  if ($studentId <= 0 || $videoId <= 0) return 0;
+
+  student_video_bonus_views_ensure_table($pdo);
+
+  try {
+    $stmt = $pdo->prepare("
+      SELECT bonus_views
+      FROM video_student_bonus_views
+      WHERE video_id=? AND student_id=?
+      LIMIT 1
+    ");
+    $stmt->execute([$videoId, $studentId]);
+    return max(0, (int)($stmt->fetchColumn() ?: 0));
+  } catch (Throwable $e) {
+    return 0;
+  }
+}
+
+function student_grant_video_bonus_view(PDO $pdo, int $studentId, int $videoId, int $increment = 1): bool {
+  $increment = max(1, $increment);
+  if ($studentId <= 0 || $videoId <= 0) return false;
+
+  student_video_bonus_views_ensure_table($pdo);
+
+  try {
+    $stmt = $pdo->prepare("
+      INSERT INTO video_student_bonus_views (video_id, student_id, bonus_views)
+      VALUES (?, ?, ?)
+      ON DUPLICATE KEY UPDATE bonus_views = bonus_views + VALUES(bonus_views)
+    ");
+    $stmt->execute([$videoId, $studentId, $increment]);
+    return true;
+  } catch (Throwable $e) {
+    return false;
+  }
+}
+
 function student_get_video_row(PDO $pdo, int $videoId): ?array {
   if ($videoId <= 0) return null;
 
@@ -81,7 +143,9 @@ function student_get_video_row(PDO $pdo, int $videoId): ?array {
       video_type,
       embed_iframe,
       embed_iframe_enc,
-      embed_iframe_iv
+      embed_iframe_iv,
+      exam_id,
+      assignment_id
     FROM videos
     WHERE id=?
     LIMIT 1
@@ -93,11 +157,13 @@ function student_get_video_row(PDO $pdo, int $videoId): ?array {
 
 function student_get_video_watch_stats(PDO $pdo, int $studentId, int $videoId, ?array $videoRow = null): array {
   $video = $videoRow ?: student_get_video_row($pdo, $videoId);
-  $allowed = max(1, (int)($video['allowed_views_per_student'] ?? 1));
+  $baseAllowed = max(1, (int)($video['allowed_views_per_student'] ?? 1));
+  $bonusAllowed = 0;
   $used = 0;
 
   if ($studentId > 0 && $videoId > 0) {
     student_video_views_ensure_table($pdo);
+    $bonusAllowed = student_get_video_bonus_views($pdo, $studentId, $videoId);
     try {
       $stmt = $pdo->prepare("SELECT views_used FROM video_student_views WHERE video_id=? AND student_id=? LIMIT 1");
       $stmt->execute([$videoId, $studentId]);
@@ -107,12 +173,77 @@ function student_get_video_watch_stats(PDO $pdo, int $studentId, int $videoId, ?
     }
   }
 
+  $allowed = max(1, $baseAllowed + $bonusAllowed);
   $remaining = max(0, $allowed - $used);
   return [
+    'base_allowed' => $baseAllowed,
+    'bonus_allowed' => $bonusAllowed,
     'allowed' => $allowed,
     'used' => $used,
     'remaining' => $remaining,
     'blocked' => ($remaining <= 0),
+  ];
+}
+
+function student_linked_assessment_name(PDO $pdo, string $type, int $assessmentId): string {
+  $assessmentId = (int)$assessmentId;
+  if ($assessmentId <= 0) return '';
+
+  $table = '';
+  if ($type === 'exam') $table = 'exams';
+  if ($type === 'assignment') $table = 'assignments';
+  if ($table === '') return '';
+
+  try {
+    $stmt = $pdo->prepare("SELECT name FROM {$table} WHERE id=? LIMIT 1");
+    $stmt->execute([$assessmentId]);
+    return trim((string)($stmt->fetchColumn() ?: ''));
+  } catch (Throwable $e) {
+    return '';
+  }
+}
+
+function student_get_video_requirement_status(PDO $pdo, int $studentId, ?array $videoRow = null, int $videoId = 0): array {
+  $video = $videoRow ?: student_get_video_row($pdo, $videoId);
+  if (!$video) {
+    return [
+      'required' => false,
+      'satisfied' => true,
+    ];
+  }
+
+  $assessmentType = '';
+  $assessmentId = 0;
+  if ((int)($video['assignment_id'] ?? 0) > 0) {
+    $assessmentType = 'assignment';
+    $assessmentId = (int)$video['assignment_id'];
+  } elseif ((int)($video['exam_id'] ?? 0) > 0) {
+    $assessmentType = 'exam';
+    $assessmentId = (int)$video['exam_id'];
+  }
+
+  if ($assessmentType === '' || $assessmentId <= 0) {
+    return [
+      'required' => false,
+      'satisfied' => true,
+    ];
+  }
+
+  $cfg = student_assessment_type_config($assessmentType);
+  $attempt = student_assessment_fetch_latest_attempt($pdo, $assessmentType, $assessmentId, $studentId);
+  $attemptStatus = (string)($attempt['status'] ?? '');
+  $assessmentName = student_linked_assessment_name($pdo, $assessmentType, $assessmentId);
+  if ($assessmentName === '') $assessmentName = (string)($cfg['label'] ?? 'المحتوى');
+
+  return [
+    'required' => true,
+    'satisfied' => ($attemptStatus === 'submitted'),
+    'assessment_type' => $assessmentType,
+    'assessment_id' => $assessmentId,
+    'assessment_label' => (string)($cfg['label'] ?? 'المحتوى'),
+    'assessment_name' => $assessmentName,
+    'assessment_href' => 'assessment.php?type=' . rawurlencode($assessmentType) . '&id=' . $assessmentId,
+    'attempt_status' => $attemptStatus,
   ];
 }
 

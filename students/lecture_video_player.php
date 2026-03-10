@@ -59,6 +59,8 @@ if (!$lecture) {
 
 student_video_views_ensure_table($pdo);
 $stats = student_get_video_watch_stats($pdo, $studentId, $videoId, $video);
+$videoRequirement = student_get_video_requirement_status($pdo, $studentId, $video);
+$videoLockedByRequirement = !empty($videoRequirement['required']) && empty($videoRequirement['satisfied']);
 $halfSeconds = student_video_half_watch_seconds((int)($video['duration_minutes'] ?? 0));
 
 $row = get_platform_settings_row($pdo);
@@ -171,7 +173,9 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
       <div class="acc-playerStage" id="lecturePlayerStage">
         <div class="acc-playerSurface" id="lecturePlayerSurface">
           <div class="acc-playerPlaceholder" id="lecturePlayerPlaceholder">
-            <?php if (!empty($stats['blocked'])): ?>
+            <?php if ($videoLockedByRequirement): ?>
+              🔒 هذا الفيديو مرتبط بـ <?php echo h((string)($videoRequirement['assessment_label'] ?? 'المحتوى')); ?>، ولن يعمل إلا بعد تسليمه.
+            <?php elseif (!empty($stats['blocked'])): ?>
               ⛔ انتهت عدد المشاهدات المسموحة لهذا الفيديو، ولن يتم تشغيله مرة أخرى.
             <?php else: ?>
               يتم حجب الفيديو افتراضيًا للحماية، ولن يظهر إلا بعد فتح المشغل المحمي من طبقة الأمان داخل الصفحة، وعلى الموبايل يلزم البقاء في وضع ملء الشاشة الآمن.
@@ -222,7 +226,9 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
       </div>
 
       <div class="acc-playerNotice" id="lecturePlayerNotice">
-        <?php if (!empty($stats['blocked'])): ?>
+        <?php if ($videoLockedByRequirement): ?>
+          🔒 يجب تسليم <?php echo h((string)($videoRequirement['assessment_name'] ?? 'المحتوى المرتبط')); ?> أولًا قبل تشغيل الفيديو. <a href="<?php echo h((string)($videoRequirement['assessment_href'] ?? '#')); ?>">فتح <?php echo h((string)($videoRequirement['assessment_label'] ?? 'المحتوى')); ?></a>
+        <?php elseif (!empty($stats['blocked'])): ?>
           ⛔ لا يمكن تشغيل هذا الفيديو لأن عدد المشاهدات المسموحة انتهى.
         <?php else: ?>
           🔒 هذه الصفحة محمية: الفيديو يفتح من طبقة الحماية فقط. على الموبايل يلزم ملء الشاشة ويدعم العرض الأفقي أثناء التشغيل، بينما تبقى حماية فقدان التركيز الصارمة على الكمبيوتر.
@@ -245,7 +251,14 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
     viewsUsed: <?php echo (int)($stats['used'] ?? 0); ?>,
     viewsRemaining: <?php echo (int)($stats['remaining'] ?? 0); ?>,
     videoType: <?php echo json_encode((string)($video['video_type'] ?? ''), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>,
-    isBlocked: <?php echo !empty($stats['blocked']) ? 'true' : 'false'; ?>,
+    isAssessmentLocked: <?php echo $videoLockedByRequirement ? 'true' : 'false'; ?>,
+    assessmentLockMessage: <?php echo json_encode(
+      $videoLockedByRequirement
+        ? ('يجب تسليم ' . (string)($videoRequirement['assessment_name'] ?? 'المحتوى المرتبط') . ' أولًا قبل تشغيل الفيديو.')
+        : '',
+      JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
+    ); ?>,
+    isBlocked: <?php echo (!empty($stats['blocked']) || $videoLockedByRequirement) ? 'true' : 'false'; ?>,
     halfSeconds: <?php echo (int)$halfSeconds; ?>
   };
 
@@ -945,7 +958,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
     videoState.viewsAllowed = parseInt(stats.allowed || videoState.viewsAllowed || 1, 10);
     videoState.viewsUsed = parseInt(stats.used || 0, 10);
     videoState.viewsRemaining = parseInt(stats.remaining || 0, 10);
-    videoState.isBlocked = videoState.viewsRemaining <= 0;
+    videoState.isBlocked = !!videoState.isAssessmentLocked || videoState.viewsRemaining <= 0;
 
     if (viewsAllowedEl) viewsAllowedEl.textContent = videoState.viewsAllowed;
     if (viewsUsedEl) viewsUsedEl.textContent = videoState.viewsUsed;
@@ -1043,7 +1056,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
 
   function startPlayback() {
     if (videoState.isBlocked) {
-      updateNotice('⛔ انتهت عدد المشاهدات المسموحة لهذا الفيديو.', true);
+      updateNotice(videoState.isAssessmentLocked ? ('🔒 ' + (videoState.assessmentLockMessage || 'الفيديو مرتبط بمحتوى يجب تسليمه أولًا.')) : '⛔ انتهت عدد المشاهدات المسموحة لهذا الفيديو.', true);
       return;
     }
     if (startRequestInFlight || playbackBootstrapped) {
@@ -1370,6 +1383,8 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   if (!videoState.isBlocked) {
     setCaptureShieldLocked(initialShieldMessage);
     updateNotice('🔒 الفيديو محجوب افتراضيًا للحماية. اضغط على "فتح المشغل المحمي" من داخل طبقة الحماية لبدء التجهيز.', false);
+  } else if (videoState.isAssessmentLocked) {
+    setCaptureShieldLocked('🔒 الفيديو مقفل حتى يتم تسليم المحتوى المرتبط به.');
   }
 
   document.addEventListener('contextmenu', function(e){ e.preventDefault(); });

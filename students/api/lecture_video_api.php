@@ -38,6 +38,7 @@ if (!student_has_lecture_access($pdo, $studentId, $lectureId)) {
 }
 
 $stats = student_get_video_watch_stats($pdo, $studentId, $videoId, $video);
+$videoRequirement = student_get_video_requirement_status($pdo, $studentId, $video);
 $halfSeconds = student_video_half_watch_seconds((int)($video['duration_minutes'] ?? 0));
 
 if (!isset($_SESSION['lecture_video_watch'])) {
@@ -45,6 +46,15 @@ if (!isset($_SESSION['lecture_video_watch'])) {
 }
 
 if ($action === 'start') {
+  if (!empty($videoRequirement['required']) && empty($videoRequirement['satisfied'])) {
+    lecture_video_api_response([
+      'ok' => false,
+      'message' => 'يجب تسليم ' . (string)($videoRequirement['assessment_name'] ?? 'المحتوى المرتبط') . ' أولًا قبل تشغيل الفيديو.',
+      'stats' => $stats,
+      'requirement' => $videoRequirement,
+    ]);
+  }
+
   if ($stats['blocked']) {
     lecture_video_api_response([
       'ok' => false,
