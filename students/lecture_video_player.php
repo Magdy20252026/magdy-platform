@@ -312,7 +312,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   const mobileViewportOffsetThresholdPx = 2;
   // Keep this above tiny fullscreen jitter, but low enough to catch devices where the notification shade only shrinks the secure viewport slightly.
   const mobileViewportBaselineShrinkThresholdPx = 12;
-  const mobileSecureStatePollIntervalMs = 240;
+  const mobileSecureStatePollIntervalMs = 320;
   var captureShieldHandle = 0;
   var captureShieldVisibleUntil = 0;
   var lastCaptureShieldTriggerAt = 0;
@@ -656,7 +656,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
       return true;
     }
 
-    if (mobileSecureStateWasSecure === false) return false;
+    if (mobileSecureStateWasSecure === false && captureShieldLocked) return false;
     mobileSecureStateWasSecure = false;
     var mobileViewportOverlayDetected = hasMobileViewportOverlay();
     var mobileViewportNotice = mobileViewportOverlayDetected
