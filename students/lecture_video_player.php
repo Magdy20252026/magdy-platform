@@ -530,7 +530,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
 
   window.setInterval(function(){
     if (protectedPageClosed) return;
-    if (document.hidden || !document.hasFocus()) {
+    if (document.hidden) {
       devtoolsDetectionStrikes = 0;
       return;
     }
