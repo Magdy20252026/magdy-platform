@@ -76,6 +76,7 @@
   box-shadow: var(--shadow-lg, 0 22px 70px rgba(0,0,0,.35));
   overflow:hidden;
 }
+html[data-theme="dark"] .as-modal__card,
 body[data-theme="dark"] .as-modal__card{
   background:#121316 !important;
   color:#f2f4f8 !important;
@@ -168,6 +169,7 @@ body[data-theme="dark"] .as-modal__card{
   opacity: 1 !important;
   overflow:hidden;
 }
+html[data-theme="dark"] .as-q,
 body[data-theme="dark"] .as-q{
   background: #121316 !important;
   color: #f2f4f8 !important;
@@ -185,6 +187,7 @@ body[data-theme="dark"] .as-q{
   border-radius:16px;
   background: rgba(255,255,255,.02);
 }
+html[data-theme="dark"] .as-nav,
 body[data-theme="dark"] .as-nav{
   background: rgba(255,255,255,.04);
 }
