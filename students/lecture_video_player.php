@@ -256,6 +256,9 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   const devtoolsCheckIntervalMs = 400;
   const fallbackHalfSeconds = 30;
   const youtubeStatePlaying = 1;
+  const rewindProtectionActivationSeconds = 5;
+  const rewindToleranceSeconds = 2;
+  const rewindCorrectionDebounceMs = 220;
 
   function ensureValidHalfSeconds(nextValue) {
     return Math.max(5, parseInt(nextValue || videoState.halfSeconds || fallbackHalfSeconds, 10));
@@ -373,11 +376,11 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
     if (!isFinite(duration) || duration < 0) duration = 0;
     current = Math.max(0, current);
     if (duration > 0) current = Math.min(current, duration);
-    if (maxReachedSeconds > 5 && current < (maxReachedSeconds - 2) && !rewindCorrectionLock && youtubePlayer) {
+    if (maxReachedSeconds > rewindProtectionActivationSeconds && current < (maxReachedSeconds - rewindToleranceSeconds) && !rewindCorrectionLock && youtubePlayer) {
       rewindCorrectionLock = true;
       youtubePlayer.seekTo(maxReachedSeconds, true);
       current = maxReachedSeconds;
-      window.setTimeout(function(){ rewindCorrectionLock = false; }, 220);
+      window.setTimeout(function(){ rewindCorrectionLock = false; }, rewindCorrectionDebounceMs);
     }
     maxReachedSeconds = Math.max(maxReachedSeconds, current);
 
@@ -549,7 +552,10 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
     progressHandle = window.setInterval(function(){
       if (!activeWatchToken || countedToken === activeWatchToken) return;
       var remaining = Math.max(0, videoState.halfSeconds - currentWatchedSeconds());
-      if (remaining <= 0) return;
+      if (remaining <= 0) {
+        window.clearInterval(progressHandle);
+        progressHandle = 0;
+      }
     }, 1000);
   }
 
@@ -640,8 +646,8 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
 
       activeWatchToken = data.watch_token || '';
       countedToken = '';
-      playbackBootstrapped = true;
       maxReachedSeconds = Math.max(0, parseInt(data.watched_seconds || 0, 10));
+      playbackBootstrapped = true;
       if (typeof data.half_seconds !== 'undefined') {
         videoState.halfSeconds = ensureValidHalfSeconds(data.half_seconds);
         if (halfSecondsEl) halfSecondsEl.textContent = videoState.halfSeconds;

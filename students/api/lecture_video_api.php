@@ -74,6 +74,8 @@ if ($action === 'start') {
     }
   }
 
+  // Restore progress from an existing uncounted session when the same student opens
+  // the same video again, preventing restart from zero during the active session.
   $restoredWatchedSeconds = max(0, (int)($existingWatch['watched_seconds'] ?? 0));
   $startedAt = (int)($existingWatch['started_at'] ?? 0);
   if ($startedAt <= 0) $startedAt = time();
