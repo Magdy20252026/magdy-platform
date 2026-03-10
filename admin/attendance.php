@@ -133,20 +133,22 @@ function attendance_lecture_enrollment_access_type(string $courseAccessType): st
   return $courseAccessType === 'free' ? 'free' : 'attendance';
 }
 function attendance_student_matches_session(PDO $pdo, array $session, int $studentId): bool {
-  $sessionId = (int)($session['id'] ?? 0);
   $gradeId = (int)($session['grade_id'] ?? 0);
   $groupId = (int)($session['group_id'] ?? 0);
-  if ($sessionId <= 0 || $studentId <= 0 || $gradeId <= 0 || $groupId <= 0) return false;
+  $centerId = (int)($session['center_id'] ?? 0);
+  if ($studentId <= 0 || $gradeId <= 0 || $groupId <= 0) return false;
 
-  $whereParts = ['id = ?', 'group_id = ?', 'grade_id = ?', "status = 'سنتر'"];
-  $params = [$studentId, $groupId, $gradeId];
-  if ((int)($session['center_id'] ?? 0) > 0) {
-    $whereParts[] = 'center_id = ?';
-    $params[] = (int)$session['center_id'];
-  }
-
-  $stmt = $pdo->prepare('SELECT 1 FROM students WHERE ' . implode(' AND ', $whereParts) . ' LIMIT 1');
-  $stmt->execute($params);
+  $stmt = $pdo->prepare("
+    SELECT 1
+    FROM students
+    WHERE id = ?
+      AND group_id = ?
+      AND grade_id = ?
+      AND status = ?
+      AND (? <= 0 OR center_id = ?)
+    LIMIT 1
+  ");
+  $stmt->execute([$studentId, $groupId, $gradeId, 'سنتر', $centerId, $centerId]);
   return (bool)$stmt->fetchColumn();
 }
 function attendance_auto_enroll_student(PDO $pdo, array $session, int $studentId): void {
@@ -202,6 +204,8 @@ function attendance_auto_enroll_student(PDO $pdo, array $session, int $studentId
     $lectureRow = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
     if (!$lectureRow) return;
 
+    $pdo->beginTransaction();
+
     $stmt = $pdo->prepare("
       INSERT IGNORE INTO student_lecture_enrollments
         (student_id, lecture_id, course_id, access_type, paid_amount, lecture_code_id)
@@ -213,8 +217,10 @@ function attendance_auto_enroll_student(PDO $pdo, array $session, int $studentId
       (int)($lectureRow['course_id'] ?? 0),
       attendance_lecture_enrollment_access_type((string)($lectureRow['course_access_type'] ?? 'attendance')),
     ]);
+    $pdo->commit();
   } catch (Throwable $e) {
     if ($pdo->inTransaction()) $pdo->rollBack();
+    error_log('Attendance auto-enrollment failed: ' . $e->getMessage());
   }
 }
 function attendance_export_excel(string $filename, array $rows, string $type): void {
