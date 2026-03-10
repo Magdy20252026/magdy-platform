@@ -234,9 +234,10 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   var requestInFlight = false;
   var protectedPageClosed = false;
   var devtoolsDetectionStrikes = 0;
-  const devtoolsWidthGapThreshold = 240;
-  const devtoolsHeightGapThreshold = 200;
-  const devtoolsStrikeThreshold = 5;
+  // tuned for typical browser UI gaps so docked DevTools detection triggers before playback continues
+  const devtoolsWidthGapThreshold = 160;
+  const devtoolsHeightGapThreshold = 140;
+  const devtoolsStrikeThreshold = 3;
   const devtoolsCheckIntervalMs = 1200;
   const fallbackHalfSeconds = 30;
 
