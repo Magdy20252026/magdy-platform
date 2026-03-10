@@ -310,8 +310,9 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   const mobileLandscapeLockRetryCount = 4;
   const mobileViewportOverlayThresholdPx = 20;
   const mobileViewportOffsetThresholdPx = 2;
-  // Keep this slightly above the 20px viewport-gap threshold so tiny fullscreen jitter is ignored, but notification-shade shrink still trips the shield.
-  const mobileViewportBaselineShrinkThresholdPx = 24;
+  // Keep this above tiny fullscreen jitter, but low enough to catch devices where the notification shade only shrinks the secure viewport slightly.
+  const mobileViewportBaselineShrinkThresholdPx = 12;
+  const mobileSecureStatePollIntervalMs = 240;
   var captureShieldHandle = 0;
   var captureShieldVisibleUntil = 0;
   var lastCaptureShieldTriggerAt = 0;
@@ -320,7 +321,9 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   var fullscreenUnlockHandle = 0;
   var mobileSecureStateResizeHandle = 0;
   var mobileLandscapeLockHandle = 0;
+  var mobileSecureStatePollHandle = 0;
   var mobileSecureViewportSnapshot = null;
+  var mobileSecureStateWasSecure = null;
   var initialShieldMessage = '🔒 الفيديو محجوب افتراضيًا للحماية. اضغط على زر فتح المشغل المحمي لعرض الفيديو داخل الصفحة الآمنة. وعلى الموبايل سيظل محجوبًا حتى يتم تفعيل ملء الشاشة.';
   var hiddenShieldMessage = '⚫️ تم تعتيم المشغل تلقائيًا لحماية المحتوى عند محاولة تصوير الشاشة أو مغادرة الصفحة. افتح المشغل المحمي يدويًا للمتابعة.';
   var blurShieldMessage = '⚫️ تم تعتيم المشغل تلقائيًا لحماية المحتوى عند محاولة تصوير الشاشة أو سحب التركيز من نافذة المشغل. افتح المشغل المحمي يدويًا للمتابعة.';
@@ -638,6 +641,41 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
     if (noticeText) updateNotice(noticeText, true);
     sendProgress('heartbeat');
     return false;
+  }
+
+  function evaluateMobileSecurePlaybackState() {
+    if (protectedPageClosed || videoState.isBlocked || !playbackBootstrapped || !isLikelyMobilePlayback()) {
+      mobileSecureStateWasSecure = null;
+      return true;
+    }
+
+    var securePlaybackState = hasMobileSecurePlaybackState();
+    if (securePlaybackState) {
+      mobileSecureStateWasSecure = true;
+      syncMobileSecureViewportSnapshot();
+      return true;
+    }
+
+    if (mobileSecureStateWasSecure === false) return false;
+    mobileSecureStateWasSecure = false;
+    var mobileViewportOverlayDetected = hasMobileViewportOverlay();
+    var mobileViewportNotice = mobileViewportOverlayDetected
+      ? '🔒 تم اكتشاف شريط إشعارات أو طبقة نظام فوق الفيديو، لذلك تمت إعادة حجب الفيديو حتى يعود العرض الآمن الكامل.'
+      : '🔒 تغيّرت حالة العرض على الموبايل، لذلك تمت إعادة حجب الفيديو حتى يعود ملء الشاشة الآمن.';
+    return enforceSecurePlaybackState(mobileViewportOverlayDetected ? mobileSecureStateShieldMessage : mobileExitShieldMessage, mobileViewportNotice);
+  }
+
+  function ensureMobileSecureStatePolling() {
+    if (mobileSecureStatePollHandle) return;
+    mobileSecureStatePollHandle = window.setInterval(function(){
+      if (!isStageFullscreenActive()) {
+        if (!isLikelyMobilePlayback() || protectedPageClosed || videoState.isBlocked || !playbackBootstrapped) {
+          mobileSecureStateWasSecure = null;
+        }
+        return;
+      }
+      evaluateMobileSecurePlaybackState();
+    }, mobileSecureStatePollIntervalMs);
   }
 
   function unlockProtectedPlayback() {
@@ -1073,6 +1111,10 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
     if (protectedPageClosed) return;
     protectedPageClosed = true;
     stopProgressTimers();
+    if (mobileSecureStatePollHandle) {
+      window.clearInterval(mobileSecureStatePollHandle);
+      mobileSecureStatePollHandle = 0;
+    }
     if (fullscreenUnlockHandle) {
       window.clearTimeout(fullscreenUnlockHandle);
       fullscreenUnlockHandle = 0;
@@ -1112,12 +1154,14 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
           window.clearTimeout(mobileLandscapeLockHandle);
           mobileLandscapeLockHandle = 0;
         }
+        mobileSecureStateWasSecure = false;
         syncMobileSecureViewportSnapshot();
         syncMobileLandscapePresentation();
         unlockMobileLandscapeOrientation();
         setCaptureShieldLocked(mobileExitShieldMessage);
         updateNotice('🔒 تمت إعادة حماية الفيديو بعد الخروج من العرض الآمن على الموبايل. افتح المشغل المحمي للمتابعة.', true);
       } else if (fullscreenElement && isLikelyMobilePlayback() && !protectedPageClosed && !videoState.isBlocked) {
+        mobileSecureStateWasSecure = true;
         syncMobileSecureViewportSnapshot();
         scheduleMobileLandscapeLock(mobileLandscapeLockRetryCount);
         updateNotice('✅ تم تفعيل العرض الآمن بملء الشاشة على هذا الجهاز. سيعمل الفيديو تلقائيًا بأفضل وضع أفقي متاح أثناء التشغيل، وإن تعذر ذلك فسيستمر العرض الآمن بالشكل المناسب للجهاز.', false);
@@ -1396,13 +1440,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
       syncMobileLandscapePresentation();
       if (hasMobileSecurePlaybackState()) syncMobileSecureViewportSnapshot();
       if (isStageFullscreenActive()) scheduleMobileLandscapeLock(mobileLandscapeLockRetryCount);
-      if (!hasSecurePlaybackFocus()) {
-        var mobileViewportOverlayDetected = hasMobileViewportOverlay();
-        var mobileViewportNotice = mobileViewportOverlayDetected
-          ? '🔒 تم اكتشاف شريط إشعارات أو طبقة نظام فوق الفيديو، لذلك تمت إعادة حجب الفيديو حتى يعود العرض الآمن الكامل.'
-          : '🔒 تغيّرت حالة العرض على الموبايل، لذلك تمت إعادة حجب الفيديو حتى يعود ملء الشاشة الآمن.';
-        enforceSecurePlaybackState(mobileViewportOverlayDetected ? mobileSecureStateShieldMessage : mobileExitShieldMessage, mobileViewportNotice);
-      }
+      evaluateMobileSecurePlaybackState();
     }, mobileSecureStateResizeDebounceMs);
   }
 
@@ -1414,6 +1452,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
       window.visualViewport.addEventListener(evt, handleMobileSecureStateViewportChange);
     });
   }
+  ensureMobileSecureStatePolling();
 
   window.addEventListener('beforeunload', function(){
     if (!activeWatchToken || countedToken === activeWatchToken) return;
