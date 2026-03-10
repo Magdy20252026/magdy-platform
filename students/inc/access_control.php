@@ -237,7 +237,7 @@ function student_extract_youtube_video_id(string $url): string {
 }
 
 function student_extract_vimeo_video_id(string $url): string {
-  $parts = @parse_url($url);
+  $parts = parse_url($url);
   if (!is_array($parts)) return '';
 
   $host = strtolower((string)($parts['host'] ?? ''));
@@ -245,11 +245,13 @@ function student_extract_vimeo_video_id(string $url): string {
   if ($host === '' || $path === '') return '';
   if (strpos($host, 'vimeo.com') === false) return '';
 
-  $segments = array_values(array_filter(explode('/', $path), 'strlen'));
+  $segments = array_values(array_filter(explode('/', $path), static function ($segment): bool {
+    return $segment !== '';
+  }));
   if (empty($segments)) return '';
 
-  $candidate = end($segments);
-  if (!is_string($candidate) || !preg_match('~^\d+$~', $candidate)) return '';
+  $candidate = (string)$segments[count($segments) - 1];
+  if (!preg_match('~^\d+$~', $candidate)) return '';
   return $candidate;
 }
 
