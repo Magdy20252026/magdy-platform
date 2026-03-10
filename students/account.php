@@ -396,8 +396,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           if ($action === 'react_chat_message') {
             $stmt = $pdo->prepare("
               INSERT INTO student_chat_message_reactions (message_id, student_id, reaction_type)
-              VALUES (?, ?, ?)
-              ON DUPLICATE KEY UPDATE reaction_type = VALUES(reaction_type), updated_at = CURRENT_TIMESTAMP
+              VALUES (?, ?, ?) AS new_reaction
+              ON DUPLICATE KEY UPDATE reaction_type = new_reaction.reaction_type, updated_at = CURRENT_TIMESTAMP
             ");
             $stmt->execute([$messageId, $studentId, $reactionType]);
           } else {
