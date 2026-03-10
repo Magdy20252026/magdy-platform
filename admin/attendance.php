@@ -126,6 +126,97 @@ function attendance_fetch_session_students(PDO $pdo, array $session): array {
 
   return $students;
 }
+function attendance_course_enrollment_access_type(string $courseAccessType): string {
+  return in_array($courseAccessType, ['buy', 'free', 'attendance', 'code'], true) ? $courseAccessType : 'attendance';
+}
+function attendance_lecture_enrollment_access_type(string $courseAccessType): string {
+  return $courseAccessType === 'free' ? 'free' : 'attendance';
+}
+function attendance_student_matches_session(PDO $pdo, array $session, int $studentId): bool {
+  $sessionId = (int)($session['id'] ?? 0);
+  $gradeId = (int)($session['grade_id'] ?? 0);
+  $groupId = (int)($session['group_id'] ?? 0);
+  if ($sessionId <= 0 || $studentId <= 0 || $gradeId <= 0 || $groupId <= 0) return false;
+
+  $whereParts = ['id = ?', 'group_id = ?', 'grade_id = ?', "status = 'سنتر'"];
+  $params = [$studentId, $groupId, $gradeId];
+  if ((int)($session['center_id'] ?? 0) > 0) {
+    $whereParts[] = 'center_id = ?';
+    $params[] = (int)$session['center_id'];
+  }
+
+  $stmt = $pdo->prepare('SELECT 1 FROM students WHERE ' . implode(' AND ', $whereParts) . ' LIMIT 1');
+  $stmt->execute($params);
+  return (bool)$stmt->fetchColumn();
+}
+function attendance_auto_enroll_student(PDO $pdo, array $session, int $studentId): void {
+  $studentId = (int)$studentId;
+  $courseId = (int)($session['course_id'] ?? 0);
+  $lectureId = (int)($session['lecture_id'] ?? 0);
+  if ($studentId <= 0 || empty($session['is_open']) || ($courseId <= 0 && $lectureId <= 0)) return;
+  if (!attendance_student_matches_session($pdo, $session, $studentId)) return;
+
+  try {
+    if ($courseId > 0) {
+      $stmt = $pdo->prepare('SELECT id, access_type FROM courses WHERE id=? LIMIT 1');
+      $stmt->execute([$courseId]);
+      $courseRow = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+      if (!$courseRow) return;
+
+      $pdo->beginTransaction();
+
+      $stmt = $pdo->prepare("
+        INSERT IGNORE INTO student_course_enrollments (student_id, course_id, access_type)
+        VALUES (?, ?, ?)
+      ");
+      $stmt->execute([
+        $studentId,
+        $courseId,
+        attendance_course_enrollment_access_type((string)($courseRow['access_type'] ?? 'attendance')),
+      ]);
+
+      $stmt = $pdo->prepare("
+        INSERT IGNORE INTO student_lecture_enrollments (student_id, lecture_id, course_id, access_type, paid_amount, lecture_code_id)
+        SELECT ?, l.id, l.course_id, ?, NULL, NULL
+        FROM lectures l
+        WHERE l.course_id = ?
+      ");
+      $stmt->execute([
+        $studentId,
+        attendance_lecture_enrollment_access_type((string)($courseRow['access_type'] ?? 'attendance')),
+        $courseId,
+      ]);
+
+      $pdo->commit();
+      return;
+    }
+
+    $stmt = $pdo->prepare("
+      SELECT l.id, l.course_id, c.access_type AS course_access_type
+      FROM lectures l
+      INNER JOIN courses c ON c.id = l.course_id
+      WHERE l.id=?
+      LIMIT 1
+    ");
+    $stmt->execute([$lectureId]);
+    $lectureRow = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+    if (!$lectureRow) return;
+
+    $stmt = $pdo->prepare("
+      INSERT IGNORE INTO student_lecture_enrollments
+        (student_id, lecture_id, course_id, access_type, paid_amount, lecture_code_id)
+      VALUES (?, ?, ?, ?, NULL, NULL)
+    ");
+    $stmt->execute([
+      $studentId,
+      $lectureId,
+      (int)($lectureRow['course_id'] ?? 0),
+      attendance_lecture_enrollment_access_type((string)($lectureRow['course_access_type'] ?? 'attendance')),
+    ]);
+  } catch (Throwable $e) {
+    if ($pdo->inTransaction()) $pdo->rollBack();
+  }
+}
 function attendance_export_excel(string $filename, array $rows, string $type): void {
   header('Content-Type: application/vnd.ms-excel; charset=utf-8');
   header('Content-Disposition: attachment; filename="' . $filename . '"');
@@ -302,6 +393,7 @@ if (($_POST['action'] ?? '') === 'scan_barcode') {
     } else {
       $stmt = $pdo->prepare("INSERT INTO attendance_records (session_id, student_id, attendance_status, scan_method, scanned_at) VALUES (?, ?, 'present', ?, NOW()) ON DUPLICATE KEY UPDATE attendance_status='present', scan_method=VALUES(scan_method), scanned_at=NOW()");
       $stmt->execute([$sessionId, (int)$studentRow['id'], in_array($scanMethod, ['barcode', 'camera', 'manual'], true) ? $scanMethod : 'barcode']);
+      attendance_auto_enroll_student($pdo, $sessionRow, (int)$studentRow['id']);
       header('Location: attendance.php?session_id=' . $sessionId . '&scanned=1&student=' . (int)$studentRow['id']);
       exit;
     }
@@ -313,8 +405,14 @@ if (($_POST['action'] ?? '') === 'mark_manual') {
   $studentId = (int)($_POST['student_id'] ?? 0);
   $attendanceStatus = (string)($_POST['attendance_status'] ?? 'present');
   if ($sessionId > 0 && $studentId > 0 && in_array($attendanceStatus, ['present', 'absent'], true)) {
+    $stmt = $pdo->prepare('SELECT * FROM attendance_sessions WHERE id=? LIMIT 1');
+    $stmt->execute([$sessionId]);
+    $sessionRow = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
     $stmt = $pdo->prepare('INSERT INTO attendance_records (session_id, student_id, attendance_status, scan_method, scanned_at) VALUES (?, ?, ?, ?, NOW()) ON DUPLICATE KEY UPDATE attendance_status=VALUES(attendance_status), scan_method=VALUES(scan_method), scanned_at=NOW()');
     $stmt->execute([$sessionId, $studentId, $attendanceStatus, 'manual']);
+    if ($attendanceStatus === 'present' && $sessionRow) {
+      attendance_auto_enroll_student($pdo, $sessionRow, $studentId);
+    }
     header('Location: attendance.php?session_id=' . $sessionId . '&updated=1');
     exit;
   }
