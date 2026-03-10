@@ -967,7 +967,6 @@ if ($cssVer === '' || $cssVer === '0') $cssVer = (string)time();
     .acc-commentForm{margin-top:12px;display:grid;gap:10px}
     .acc-chatSend{margin-top:14px;display:grid;gap:10px}
     @media (max-width: 980px){ .acc-assess-grid{grid-template-columns:1fr;} .acc-chatLayout{grid-template-columns:1fr;} }
-    @media (max-width: 980px){ .acc-assess-grid{grid-template-columns:1fr;} }
   </style>
 
   <title>حساب الطالب - <?php echo h($platformName); ?></title>
@@ -1371,7 +1370,7 @@ if ($cssVer === '' || $cssVer === '0') $cssVer = (string)time();
         <section class="acc-card" aria-label="فيسبوك المنصة">
           <div class="acc-card__head">
             <h2>📘 فيسبوك المنصة</h2>
-            <p>تابع منشورات الإدارة، أضف ريأكت مثل الفيسبوك، واكتب تعليقك لتتلقى رد الإدارة عليه.</p>
+            <p>تابع منشورات الإدارة، أضف رياكت مثل الفيسبوك، واكتب تعليقك لتتلقى رد الإدارة عليه.</p>
           </div>
 
           <?php if (empty($platformPosts)): ?>

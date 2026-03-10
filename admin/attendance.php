@@ -34,12 +34,6 @@ function menu_visible(array $allowedKeys, string $key, string $role): bool {
   if ($key === 'logout') return true;
   return menu_allowed($allowedKeys, $key);
 }
-function attendance_status_label(string $status): string {
-  if ($status === 'submitted') return 'تم الحل';
-  if ($status === 'expired') return 'انتهى الوقت';
-  if ($status === 'in_progress') return 'جاري الحل';
-  return 'لم يحل';
-}
 function attendance_fetch_session_students(PDO $pdo, array $session): array {
   $sessionId = (int)($session['id'] ?? 0);
   $gradeId = (int)($session['grade_id'] ?? 0);
@@ -56,12 +50,17 @@ function attendance_fetch_session_students(PDO $pdo, array $session): array {
   $stmt->execute([$gradeId]);
   $lastExam = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
 
+  $whereParts = [
+    's.group_id = ?',
+    's.grade_id = ?',
+    "s.status = 'سنتر'",
+  ];
   $params = [$groupId, $gradeId];
-  $whereCenter = '';
   if ($centerId > 0) {
-    $whereCenter = ' AND s.center_id = ?';
+    $whereParts[] = 's.center_id = ?';
     $params[] = $centerId;
   }
+  $studentsWhereSql = implode(' AND ', $whereParts);
   $stmt = $pdo->prepare(" 
     SELECT s.id, s.full_name, s.student_phone, s.parent_phone, s.barcode, s.status,
            c.name AS center_name, g.name AS group_name,
@@ -70,9 +69,7 @@ function attendance_fetch_session_students(PDO $pdo, array $session): array {
     INNER JOIN `groups` g ON g.id = s.group_id
     LEFT JOIN centers c ON c.id = s.center_id
     LEFT JOIN attendance_records ar ON ar.student_id = s.id AND ar.session_id = ?
-    WHERE s.group_id = ?
-      AND s.grade_id = ?
-      AND s.status = 'سنتر'{$whereCenter}
+    WHERE {$studentsWhereSql}
     ORDER BY s.full_name ASC
   ");
   array_unshift($params, $sessionId);
@@ -119,10 +116,10 @@ function attendance_fetch_session_students(PDO $pdo, array $session): array {
     $studentRow['is_present'] = (($studentRow['attendance_status'] ?? '') === 'present');
     $studentRow['attendance_text'] = $studentRow['is_present'] ? 'حاضر' : 'غائب';
     $studentRow['assignment_name'] = (string)($lastAssignment['name'] ?? 'لا يوجد واجب مضاف');
-    $studentRow['assignment_status'] = attendance_status_label((string)($assignAttempt['status'] ?? ''));
+    $studentRow['assignment_status'] = platform_attempt_status_label((string)($assignAttempt['status'] ?? ''));
     $studentRow['assignment_score_text'] = $assignAttempt ? ((float)$assignAttempt['score'] . ' / ' . (float)$assignAttempt['max_score']) : '—';
     $studentRow['exam_name'] = (string)($lastExam['name'] ?? 'لا يوجد امتحان مضاف');
-    $studentRow['exam_status'] = attendance_status_label((string)($examAttempt['status'] ?? ''));
+    $studentRow['exam_status'] = platform_attempt_status_label((string)($examAttempt['status'] ?? ''));
     $studentRow['exam_score_text'] = $examAttempt ? ((float)$examAttempt['score'] . ' / ' . (float)$examAttempt['max_score']) : '—';
   }
   unset($studentRow);
@@ -221,13 +218,14 @@ if (($_POST['action'] ?? '') === 'scan_barcode') {
   } elseif ($barcode === '') {
     $error = 'مرر باركود الطالب أولاً.';
   } else {
+    $whereParts = ['barcode=?', 'group_id=?', 'grade_id=?', "status='سنتر'"];
     $params = [$barcode, (int)$sessionRow['group_id'], (int)$sessionRow['grade_id']];
-    $whereCenter = '';
     if ((int)($sessionRow['center_id'] ?? 0) > 0) {
-      $whereCenter = ' AND center_id = ?';
+      $whereParts[] = 'center_id = ?';
       $params[] = (int)$sessionRow['center_id'];
     }
-    $stmt = $pdo->prepare("SELECT id, full_name FROM students WHERE barcode=? AND group_id=? AND grade_id=? AND status='سنتر'{$whereCenter} LIMIT 1");
+    $studentWhereSql = implode(' AND ', $whereParts);
+    $stmt = $pdo->prepare("SELECT id, full_name FROM students WHERE {$studentWhereSql} LIMIT 1");
     $stmt->execute($params);
     $studentRow = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
     if (!$studentRow) {

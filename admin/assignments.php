@@ -307,13 +307,6 @@ if (($_GET['action'] ?? '') === 'preview_json') {
   exit;
 }
 
-function assignment_result_status_label(string $status): string {
-  if ($status === 'submitted') return 'تم الحل';
-  if ($status === 'expired') return 'انتهى الوقت';
-  if ($status === 'in_progress') return 'جاري الحل';
-  return 'لم يبدأ';
-}
-
 function assignment_fetch_result_rows(PDO $pdo, int $assignmentId): array {
   $stmt = $pdo->prepare("
     SELECT a.id, a.name, a.grade_id, g.name AS grade_name
@@ -350,7 +343,7 @@ function assignment_fetch_result_rows(PDO $pdo, int $assignmentId): array {
   $unsolved = [];
   foreach ($rows as &$row) {
     $status = (string)($row['attempt_status'] ?? '');
-    $row['status_label'] = assignment_result_status_label($status);
+    $row['status_label'] = platform_attempt_status_label($status);
     $row['score_text'] = ($status === 'submitted' || $status === 'expired')
       ? ((float)($row['score'] ?? 0) . ' / ' . (float)($row['max_score'] ?? 0))
       : '—';

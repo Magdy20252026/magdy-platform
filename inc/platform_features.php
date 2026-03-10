@@ -149,3 +149,12 @@ if (!function_exists('platform_features_ensure_tables')) {
     ");
   }
 }
+
+if (!function_exists('platform_attempt_status_label')) {
+  function platform_attempt_status_label(string $status): string {
+    if ($status === 'submitted') return 'تم الحل';
+    if ($status === 'expired') return 'انتهى الوقت';
+    if ($status === 'in_progress') return 'جاري الحل';
+    return 'لم يبدأ';
+  }
+}
