@@ -23,7 +23,6 @@ import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.content.FileProvider
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -58,7 +57,6 @@ class MainActivity : AppCompatActivity() {
         private const val PDF_CACHE_DIR_NAME = "lecture-pdfs"
         private const val PDF_FILENAME_PREFIX = "lecture-"
         private const val PDF_FILE_EXTENSION = "pdf"
-        private const val FILE_PROVIDER_SUFFIX = ".fileprovider"
         private const val LECTURE_PDF_VIEWER_FILENAME = "lecture_pdf_viewer.php"
         private const val LECTURE_PDF_FILENAME = "lecture_pdf.php"
     }
@@ -394,27 +392,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun openDownloadedPdf(file: File) {
-        val pdfUri = FileProvider.getUriForFile(
-            this,
-            "${BuildConfig.APPLICATION_ID}$FILE_PROVIDER_SUFFIX",
-            file
-        )
-
-        val intent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(pdfUri, "application/pdf")
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        val intent = Intent(this, PdfViewerActivity::class.java).apply {
+            putExtra(PdfViewerActivity.EXTRA_PDF_PATH, file.absolutePath)
         }
-
-        try {
-            startActivity(intent)
-        } catch (_: ActivityNotFoundException) {
-            Toast.makeText(
-                this,
-                R.string.pdf_viewer_not_found,
-                Toast.LENGTH_SHORT
-            ).show()
-        }
+        startActivity(intent)
     }
 
     @Throws(IOException::class)
