@@ -2,5 +2,10 @@
     <string name="app_name">Magdy Student</string>
     <string name="file_picker_not_found">لا يوجد تطبيق لاختيار الملفات على هذا الجهاز.</string>
     <string name="pdf_open_failed">تعذر تحميل ملف PDF داخل التطبيق.</string>
-    <string name="pdf_viewer_not_found">لا يوجد تطبيق لفتح ملفات PDF على هذا الجهاز.</string>
+    <string name="pdf_invalid_file">ملف PDF غير متوفر أو تالف.</string>
+    <string name="pdf_viewer_title">قارئ الملف</string>
+    <string name="pdf_close">إغلاق قارئ الملف</string>
+    <string name="pdf_previous_page">الصفحة السابقة</string>
+    <string name="pdf_next_page">الصفحة التالية</string>
+    <string name="pdf_page_indicator">صفحة %1$d من %2$d</string>
 </resources>
