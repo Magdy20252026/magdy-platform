@@ -57,7 +57,6 @@ class MainActivity : AppCompatActivity() {
         private const val PDF_CACHE_DIR_NAME = "lecture-pdfs"
         private const val PDF_FILENAME_PREFIX = "lecture-"
         private const val PDF_FILE_EXTENSION = "pdf"
-        private const val LECTURE_PDF_VIEWER_FILENAME = "lecture_pdf_viewer.php"
         private const val LECTURE_PDF_FILENAME = "lecture_pdf.php"
     }
 
@@ -340,17 +339,6 @@ class MainActivity : AppCompatActivity() {
         val originalPath = uri.path ?: return null
         val path = originalPath.lowercase()
         return when {
-            path.endsWith("/$LECTURE_PDF_VIEWER_FILENAME") -> {
-                val lastSlashIndex = originalPath.lastIndexOf('/')
-                val directPdfPath = if (lastSlashIndex >= 0) {
-                    originalPath.substring(0, lastSlashIndex + 1) + LECTURE_PDF_FILENAME
-                } else {
-                    LECTURE_PDF_FILENAME
-                }
-                uri.buildUpon()
-                    .path(directPdfPath)
-                    .build()
-            }
             path.endsWith("/$LECTURE_PDF_FILENAME") || path.endsWith(".$PDF_FILE_EXTENSION") -> uri
             else -> null
         }
