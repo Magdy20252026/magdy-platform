@@ -38,6 +38,7 @@ if ($absolutePath === '') {
   header('Location: account_lecture.php?lecture_id=' . (int)($pdf['lecture_id'] ?? 0));
   exit;
 }
+$pdfStreamUrl = 'lecture_pdf.php?pdf_id=' . (int)$pdfId;
 
 $stmt = $pdo->prepare("
   SELECT s.full_name, s.wallet_balance, s.barcode
@@ -142,7 +143,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
         <iframe
           id="lecturePdfFrame"
           title="Lecture PDF Viewer"
-          src="lecture_pdf.php?pdf_id=<?php echo (int)$pdfId; ?>#toolbar=0&navpanes=0&scrollbar=0"
+          src="<?php echo h($pdfStreamUrl); ?>#toolbar=0&navpanes=0&scrollbar=0"
           loading="lazy"
         ></iframe>
       </div>
@@ -165,10 +166,10 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
 
   function requestNativePdfOpen() {
     if (!window.StudentAppBridge || typeof window.StudentAppBridge.openProtectedPdf !== 'function') return;
-    var frame = document.getElementById('lecturePdfFrame');
-    if (!frame || !frame.src) return;
+    var nativePdfUrl = <?php echo json_encode($pdfStreamUrl, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE); ?>;
+    if (!nativePdfUrl) return;
     try {
-      window.StudentAppBridge.openProtectedPdf(toAbsoluteUrl(frame.src));
+      window.StudentAppBridge.openProtectedPdf(toAbsoluteUrl(nativePdfUrl));
     } catch(e) {}
   }
 
