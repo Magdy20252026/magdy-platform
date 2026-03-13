@@ -155,12 +155,20 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
 <script src="assets/js/theme.js"></script>
 <script>
 (function(){
+  function toAbsoluteUrl(url) {
+    try {
+      return new URL(String(url || ''), window.location.href).toString();
+    } catch(e) {
+      return String(url || '');
+    }
+  }
+
   function requestNativePdfOpen() {
     if (!window.StudentAppBridge || typeof window.StudentAppBridge.openProtectedPdf !== 'function') return;
     var frame = document.getElementById('lecturePdfFrame');
     if (!frame || !frame.src) return;
     try {
-      window.StudentAppBridge.openProtectedPdf(frame.src);
+      window.StudentAppBridge.openProtectedPdf(toAbsoluteUrl(frame.src));
     } catch(e) {}
   }
 
