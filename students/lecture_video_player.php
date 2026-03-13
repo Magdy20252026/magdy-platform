@@ -608,7 +608,6 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   function hasMobileSecurePlaybackState() {
     if (!isStageFullscreenActive()) return false;
     if (document.visibilityState === 'hidden') return false;
-    if (!hasDocumentFocus()) return false;
     if (hasMobileViewportOverlay()) return false;
     return true;
   }
@@ -1432,6 +1431,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
     }
   });
   window.addEventListener('blur', function(){
+    if (isLikelyMobilePlayback()) return;
     window.setTimeout(function(){
       setCaptureShieldLocked(document.visibilityState === 'hidden' ? recordShieldMessage : blurShieldMessage);
       sendProgress('heartbeat');
@@ -1451,6 +1451,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
     }
   });
   window.addEventListener('focus', function(){
+    if (isLikelyMobilePlayback()) return;
     if (protectedPageClosed || videoState.isBlocked || !playbackBootstrapped) return;
     if (!hasSecurePlaybackFocus()) {
       enforceSecurePlaybackState('', isLikelyMobilePlayback()
