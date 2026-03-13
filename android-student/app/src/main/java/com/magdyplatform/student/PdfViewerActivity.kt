@@ -46,7 +46,7 @@ class PdfViewerActivity : AppCompatActivity() {
 
         val pdfPath = intent.getStringExtra(EXTRA_PDF_PATH)?.trim().orEmpty()
         if (pdfPath.isEmpty()) {
-            Toast.makeText(this, R.string.pdf_open_failed, Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, R.string.pdf_invalid_file, Toast.LENGTH_SHORT).show()
             finish()
             return
         }
@@ -63,8 +63,14 @@ class PdfViewerActivity : AppCompatActivity() {
             val descriptor = fileDescriptor ?: error("Missing PDF descriptor")
             pdfRenderer = PdfRenderer(descriptor)
         }
-        if (openResult.isFailure || (pdfRenderer?.pageCount ?: 0) <= 0) {
+        if (openResult.isFailure) {
             Toast.makeText(this, R.string.pdf_open_failed, Toast.LENGTH_SHORT).show()
+            closeRenderer()
+            finish()
+            return
+        }
+        if ((pdfRenderer?.pageCount ?: 0) <= 0) {
+            Toast.makeText(this, R.string.pdf_invalid_file, Toast.LENGTH_SHORT).show()
             closeRenderer()
             finish()
             return
@@ -88,14 +94,15 @@ class PdfViewerActivity : AppCompatActivity() {
 
         currentBitmap?.recycle()
         val page = currentPage ?: return
-        val scale = resources.displayMetrics.density.coerceAtLeast(1f)
+        val scale = resources.displayMetrics.density.coerceIn(MIN_RENDER_SCALE, MAX_RENDER_SCALE)
         val targetWidth = (page.width * scale).toInt().coerceAtLeast(1)
         val targetHeight = (page.height * scale).toInt().coerceAtLeast(1)
-        currentBitmap = Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888).apply {
+        currentBitmap = Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.RGB_565).apply {
             eraseColor(Color.WHITE)
         }
-        page.render(currentBitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-        pdfImageView.setImageBitmap(currentBitmap)
+        val renderedBitmap = currentBitmap ?: return
+        page.render(renderedBitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+        pdfImageView.setImageBitmap(renderedBitmap)
 
         pageIndicatorView.text = getString(
             R.string.pdf_page_indicator,
@@ -119,5 +126,7 @@ class PdfViewerActivity : AppCompatActivity() {
 
     companion object {
         const val EXTRA_PDF_PATH = "extra_pdf_path"
+        private const val MIN_RENDER_SCALE = 1f
+        private const val MAX_RENDER_SCALE = 2f
     }
 }

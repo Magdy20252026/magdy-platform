@@ -395,16 +395,7 @@ class MainActivity : AppCompatActivity() {
         val intent = Intent(this, PdfViewerActivity::class.java).apply {
             putExtra(PdfViewerActivity.EXTRA_PDF_PATH, file.absolutePath)
         }
-
-        try {
-            startActivity(intent)
-        } catch (_: ActivityNotFoundException) {
-            Toast.makeText(
-                this,
-                R.string.pdf_open_failed,
-                Toast.LENGTH_SHORT
-            ).show()
-        }
+        startActivity(intent)
     }
 
     @Throws(IOException::class)
