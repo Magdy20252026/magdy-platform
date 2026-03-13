@@ -140,6 +140,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
     <section class="acc-card acc-viewerFrameShell" aria-label="عارض ملف PDF">
       <div class="acc-pdfViewer">
         <iframe
+          id="lecturePdfFrame"
           title="Lecture PDF Viewer"
           src="lecture_pdf.php?pdf_id=<?php echo (int)$pdfId; ?>#toolbar=0&navpanes=0&scrollbar=0"
           loading="lazy"
@@ -152,5 +153,23 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
 </main>
 
 <script src="assets/js/theme.js"></script>
+<script>
+(function(){
+  function requestNativePdfOpen() {
+    if (!window.StudentAppBridge || typeof window.StudentAppBridge.openProtectedPdf !== 'function') return;
+    var frame = document.getElementById('lecturePdfFrame');
+    if (!frame || !frame.src) return;
+    try {
+      window.StudentAppBridge.openProtectedPdf(frame.src);
+    } catch(e) {}
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', requestNativePdfOpen, {once:true});
+  } else {
+    requestNativePdfOpen();
+  }
+})();
+</script>
 </body>
 </html>

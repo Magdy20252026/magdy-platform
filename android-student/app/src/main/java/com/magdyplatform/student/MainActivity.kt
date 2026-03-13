@@ -2,6 +2,7 @@ package com.magdyplatform.student
 
 import android.content.ActivityNotFoundException
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
@@ -10,6 +11,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.webkit.CookieManager
+import android.webkit.JavascriptInterface
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
@@ -45,6 +47,9 @@ class MainActivity : AppCompatActivity() {
     private var customView: View? = null
     private var customViewCallback: WebChromeClient.CustomViewCallback? = null
     private var customViewContainer: FrameLayout? = null
+    private var previousRequestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+    private var landscapeVideoModeActive = false
+    private var pdfOpenInFlight = false
 
     companion object {
         private const val TAG = "MainActivity"
@@ -92,6 +97,7 @@ class MainActivity : AppCompatActivity() {
     private fun configureWebView() {
         CookieManager.getInstance().setAcceptCookie(true)
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)
+        webView.addJavascriptInterface(StudentAppBridge(), "StudentAppBridge")
 
         webView.settings.apply {
             javaScriptEnabled = true
@@ -180,6 +186,7 @@ class MainActivity : AppCompatActivity() {
                         ViewGroup.LayoutParams.MATCH_PARENT
                     )
                 )
+                enterLandscapeVideoMode()
                 webView.isVisible = false
                 progressIndicator.isVisible = false
                 WindowCompat.setDecorFitsSystemWindows(window, false)
@@ -276,6 +283,7 @@ class MainActivity : AppCompatActivity() {
         customView = null
         customViewCallback?.onCustomViewHidden()
         customViewCallback = null
+        exitLandscapeVideoMode()
         decorView?.let {
             WindowCompat.setDecorFitsSystemWindows(window, true)
             WindowInsetsControllerCompat(window, it).show(WindowInsetsCompat.Type.systemBars())
@@ -284,30 +292,50 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun handlePdfNavigation(uri: Uri): Boolean {
+        if (pdfOpenInFlight) return true
         val pdfUri = resolveProtectedPdfUri(uri) ?: return false
+        pdfOpenInFlight = true
         progressIndicator.isVisible = true
         progressIndicator.progress = 0
 
         lifecycleScope.launch {
-            val result = runCatching {
-                withContext(Dispatchers.IO) {
-                    downloadPdfToCache(pdfUri)
+            try {
+                val result = runCatching {
+                    withContext(Dispatchers.IO) {
+                        downloadPdfToCache(pdfUri)
+                    }
                 }
-            }
-            if (isFinishing || isDestroyed) return@launch
-            progressIndicator.isVisible = false
-            result.onSuccess { file ->
-                openDownloadedPdf(file)
-            }.onFailure {
-                Toast.makeText(
-                    this@MainActivity,
-                    R.string.pdf_open_failed,
-                    Toast.LENGTH_SHORT
-                ).show()
+                if (isFinishing || isDestroyed) return@launch
+                progressIndicator.isVisible = false
+                result.onSuccess { file ->
+                    openDownloadedPdf(file)
+                }.onFailure {
+                    Toast.makeText(
+                        this@MainActivity,
+                        R.string.pdf_open_failed,
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            } finally {
+                pdfOpenInFlight = false
             }
         }
 
         return true
+    }
+
+    private fun enterLandscapeVideoMode() {
+        if (landscapeVideoModeActive) return
+        previousRequestedOrientation = requestedOrientation
+        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        landscapeVideoModeActive = true
+    }
+
+    private fun exitLandscapeVideoMode() {
+        if (!landscapeVideoModeActive) return
+        requestedOrientation = previousRequestedOrientation
+        previousRequestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        landscapeVideoModeActive = false
     }
 
     private fun resolveProtectedPdfUri(uri: Uri): Uri? {
@@ -409,5 +437,30 @@ class MainActivity : AppCompatActivity() {
         }
 
         return targetDir
+    }
+
+    private inner class StudentAppBridge {
+        @JavascriptInterface
+        fun enterLandscapeVideoMode() {
+            runOnUiThread {
+                this@MainActivity.enterLandscapeVideoMode()
+            }
+        }
+
+        @JavascriptInterface
+        fun exitLandscapeVideoMode() {
+            runOnUiThread {
+                this@MainActivity.exitLandscapeVideoMode()
+            }
+        }
+
+        @JavascriptInterface
+        fun openProtectedPdf(url: String?) {
+            val safeUrl = url?.trim()?.takeIf { it.isNotEmpty() } ?: return
+            val parsedUri = runCatching { Uri.parse(safeUrl) }.getOrNull() ?: return
+            runOnUiThread {
+                handlePdfNavigation(parsedUri)
+            }
+        }
     }
 }
