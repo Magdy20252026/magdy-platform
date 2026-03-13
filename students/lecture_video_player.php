@@ -510,6 +510,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
 
   function lockMobileLandscapeOrientation() {
     if (!isLikelyMobilePlayback() || !isStageFullscreenActive()) return;
+    notifyNativeStudentAppLandscapeMode(true);
     if (!window.screen || !window.screen.orientation || typeof window.screen.orientation.lock !== 'function') return;
     try {
       var lockPromise = window.screen.orientation.lock('landscape');
@@ -520,9 +521,21 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   }
 
   function unlockMobileLandscapeOrientation() {
+    notifyNativeStudentAppLandscapeMode(false);
     if (!window.screen || !window.screen.orientation || typeof window.screen.orientation.unlock !== 'function') return;
     try {
       window.screen.orientation.unlock();
+    } catch(e) {}
+  }
+
+  function notifyNativeStudentAppLandscapeMode(enabled) {
+    if (!window.StudentAppBridge) return;
+    try {
+      if (enabled && typeof window.StudentAppBridge.enterLandscapeVideoMode === 'function') {
+        window.StudentAppBridge.enterLandscapeVideoMode();
+      } else if (!enabled && typeof window.StudentAppBridge.exitLandscapeVideoMode === 'function') {
+        window.StudentAppBridge.exitLandscapeVideoMode();
+      }
     } catch(e) {}
   }
 
