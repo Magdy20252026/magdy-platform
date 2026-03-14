@@ -40,6 +40,7 @@ if ($absolutePath === '') {
 }
 
 $pdfAccessToken = student_create_pdf_access_token($studentId, $pdfId);
+$pdfDirectSrc = 'lecture_pdf.php?pdf_id=' . (int)$pdfId;
 $pdfFrameSrc = 'lecture_pdf.php?pdf_id=' . (int)$pdfId;
 if ($pdfAccessToken !== '') {
   $pdfFrameSrc .= '&access_token=' . rawurlencode($pdfAccessToken);
@@ -171,10 +172,8 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
 
   function requestNativePdfOpen() {
     if (!window.StudentAppBridge || typeof window.StudentAppBridge.openProtectedPdf !== 'function') return;
-    var frame = document.getElementById('lecturePdfFrame');
-    if (!frame || !frame.src) return;
     try {
-      window.StudentAppBridge.openProtectedPdf(toAbsoluteUrl(frame.src));
+      window.StudentAppBridge.openProtectedPdf(toAbsoluteUrl(<?php echo json_encode($pdfDirectSrc, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE); ?>));
     } catch(e) {}
   }
 
