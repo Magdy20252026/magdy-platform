@@ -39,6 +39,12 @@ if ($absolutePath === '') {
   exit;
 }
 
+$pdfAccessToken = student_create_pdf_access_token($studentId, $pdfId);
+$pdfFrameSrc = 'lecture_pdf.php?pdf_id=' . (int)$pdfId;
+if ($pdfAccessToken !== '') {
+  $pdfFrameSrc .= '&access_token=' . rawurlencode($pdfAccessToken);
+}
+
 $stmt = $pdo->prepare("
   SELECT s.full_name, s.wallet_balance, s.barcode
   FROM students s
@@ -142,7 +148,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
         <iframe
           id="lecturePdfFrame"
           title="Lecture PDF Viewer"
-          src="lecture_pdf.php?pdf_id=<?php echo (int)$pdfId; ?>#toolbar=0&navpanes=0&scrollbar=0"
+          src="<?php echo h($pdfFrameSrc); ?>#toolbar=0&navpanes=0&scrollbar=0"
           loading="lazy"
         ></iframe>
       </div>

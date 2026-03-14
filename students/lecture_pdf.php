@@ -5,14 +5,15 @@ require __DIR__ . '/inc/student_auth.php';
 require __DIR__ . '/inc/access_control.php';
 
 no_cache_headers();
-student_require_login();
-
-$studentId = (int)($_SESSION['student_id'] ?? 0);
 $pdfId = (int)($_GET['pdf_id'] ?? 0);
+$studentId = (int)($_SESSION['student_id'] ?? 0);
+if ($studentId <= 0) {
+  $studentId = student_verify_pdf_access_token((string)($_GET['access_token'] ?? ''), $pdfId);
+}
 
 if ($studentId <= 0 || $pdfId <= 0) {
-  http_response_code(404);
-  exit('PDF not found.');
+  http_response_code(403);
+  exit('Access denied.');
 }
 
 $stmt = $pdo->prepare("

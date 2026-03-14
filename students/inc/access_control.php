@@ -628,3 +628,46 @@ function student_resolve_pdf_absolute_path(string $filePath): string {
 
   return $absolute;
 }
+
+function student_create_pdf_access_token(int $studentId, int $pdfId, int $ttl = 300): string {
+  if ($studentId <= 0 || $pdfId <= 0 || !defined('APP_EMBED_SECRET_KEY')) return '';
+
+  $secret = (string)APP_EMBED_SECRET_KEY;
+  if ($secret === '') return '';
+
+  $expiresAt = time() + max(30, $ttl);
+  $payload = $studentId . '|' . $pdfId . '|' . $expiresAt;
+  $signature = hash_hmac('sha256', $payload, $secret, true);
+
+  return rtrim(strtr(base64_encode($payload), '+/', '-_'), '=') . '.' .
+    rtrim(strtr(base64_encode($signature), '+/', '-_'), '=');
+}
+
+function student_verify_pdf_access_token(string $token, int $pdfId): int {
+  $token = trim($token);
+  if ($token === '' || $pdfId <= 0 || !defined('APP_EMBED_SECRET_KEY')) return 0;
+
+  $secret = (string)APP_EMBED_SECRET_KEY;
+  if ($secret === '') return 0;
+
+  $parts = explode('.', $token, 2);
+  if (count($parts) !== 2) return 0;
+
+  $payload = base64_decode(strtr($parts[0], '-_', '+/') . str_repeat('=', (4 - strlen($parts[0]) % 4) % 4), true);
+  $signature = base64_decode(strtr($parts[1], '-_', '+/') . str_repeat('=', (4 - strlen($parts[1]) % 4) % 4), true);
+  if (!is_string($payload) || !is_string($signature) || $payload === '' || $signature === '') return 0;
+
+  $expectedSignature = hash_hmac('sha256', $payload, $secret, true);
+  if (!hash_equals($expectedSignature, $signature)) return 0;
+
+  $payloadParts = explode('|', $payload, 3);
+  if (count($payloadParts) !== 3) return 0;
+
+  $studentId = (int)($payloadParts[0] ?? 0);
+  $tokenPdfId = (int)($payloadParts[1] ?? 0);
+  $expiresAt = (int)($payloadParts[2] ?? 0);
+
+  if ($studentId <= 0 || $tokenPdfId !== $pdfId || $expiresAt < time()) return 0;
+
+  return $studentId;
+}
