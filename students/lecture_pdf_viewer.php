@@ -40,7 +40,10 @@ if ($absolutePath === '') {
 }
 
 $pdfAccessToken = student_create_pdf_access_token($studentId, $pdfId);
-$pdfFrameSrc = 'lecture_pdf.php?pdf_id=' . (int)$pdfId;
+$pdfBaseSrc = 'lecture_pdf.php?pdf_id=' . (int)$pdfId;
+// Native app downloads the PDF with the logged-in student's WebView cookies, so this URL remains session-protected there.
+$pdfDirectSrc = $pdfBaseSrc;
+$pdfFrameSrc = $pdfBaseSrc;
 if ($pdfAccessToken !== '') {
   $pdfFrameSrc .= '&access_token=' . rawurlencode($pdfAccessToken);
 }
@@ -161,6 +164,8 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
 <script src="assets/js/theme.js"></script>
 <script>
 (function(){
+  const pdfDirectUrl = <?php echo json_encode($pdfDirectSrc, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE); ?>;
+
   function toAbsoluteUrl(url) {
     try {
       return new URL(String(url || ''), window.location.href).toString();
@@ -171,10 +176,8 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
 
   function requestNativePdfOpen() {
     if (!window.StudentAppBridge || typeof window.StudentAppBridge.openProtectedPdf !== 'function') return;
-    var frame = document.getElementById('lecturePdfFrame');
-    if (!frame || !frame.src) return;
     try {
-      window.StudentAppBridge.openProtectedPdf(toAbsoluteUrl(frame.src));
+      window.StudentAppBridge.openProtectedPdf(toAbsoluteUrl(pdfDirectUrl));
     } catch(e) {}
   }
 
