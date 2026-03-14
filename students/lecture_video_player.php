@@ -539,6 +539,15 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
     } catch(e) {}
   }
 
+  function isNativeStudentAppPlayback() {
+    return !!(
+      isLikelyMobilePlayback() &&
+      window.StudentAppBridge &&
+      typeof window.StudentAppBridge.enterLandscapeVideoMode === 'function' &&
+      typeof window.StudentAppBridge.exitLandscapeVideoMode === 'function'
+    );
+  }
+
   function hasDocumentFocus() {
     if (typeof document.hasFocus === 'function') return document.hasFocus();
     if (typeof window.hasFocus === 'function') return window.hasFocus();
@@ -606,6 +615,11 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   }
 
   function hasMobileSecurePlaybackState() {
+    if (isNativeStudentAppPlayback()) {
+      if (document.visibilityState === 'hidden') return false;
+      if (hasMobileViewportOverlay()) return false;
+      return true;
+    }
     if (!isStageFullscreenActive()) return false;
     if (document.visibilityState === 'hidden') return false;
     if (hasMobileViewportOverlay()) return false;
@@ -1136,6 +1150,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
     if (protectedPageClosed) return;
     protectedPageClosed = true;
     stopProgressTimers();
+    unlockMobileLandscapeOrientation();
     if (mobileSecureStatePollHandle) {
       window.clearInterval(mobileSecureStatePollHandle);
       mobileSecureStatePollHandle = 0;
@@ -1352,6 +1367,18 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
     captureShieldActionBtn.addEventListener('click', function(e){
       e.preventDefault();
       if (isLikelyMobilePlayback() && playerStage && !isStageFullscreenActive()) {
+        if (isNativeStudentAppPlayback()) {
+          notifyNativeStudentAppLandscapeMode(true);
+          if (fullscreenUnlockHandle) window.clearTimeout(fullscreenUnlockHandle);
+          fullscreenUnlockHandle = window.setTimeout(function(){
+            fullscreenUnlockHandle = 0;
+            mobileSecureStateWasSecure = true;
+            syncMobileSecureViewportSnapshot();
+            syncMobileLandscapePresentation();
+            unlockProtectedPlayback();
+          }, fullscreenActivationDelayMs);
+          return;
+        }
         var requestFullscreen = requestSecureFullscreen(playerStage);
         if (typeof requestFullscreen !== 'function') {
           setCaptureShieldLocked(mobileFullscreenRejectionShieldMessage);
@@ -1439,6 +1466,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   });
   window.addEventListener('pagehide', function(){
     if (protectedPageClosed || videoState.isBlocked) return;
+    unlockMobileLandscapeOrientation();
     setCaptureShieldLocked('⚫️ تمت إعادة حجب المشغل مباشرة عند مغادرة الصفحة أو إخفائها لحماية الفيديو.');
     sendProgress('heartbeat');
   });
@@ -1484,6 +1512,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   ensureMobileSecureStatePolling();
 
   window.addEventListener('beforeunload', function(){
+    unlockMobileLandscapeOrientation();
     if (!activeWatchToken || countedToken === activeWatchToken) return;
     var body = new URLSearchParams();
     body.set('action', 'complete');
