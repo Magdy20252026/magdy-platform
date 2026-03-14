@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/path_helpers.php';
 
 function student_assessment_type_config(string $type): ?array {
   $type = strtolower(trim($type));
@@ -167,7 +168,7 @@ function student_assessment_format_score_pair(float $score, float $max): string 
 function student_assessment_media_url(?string $path): ?string {
   $path = trim((string)$path);
   if ($path === '') return null;
-  return '../admin/' . ltrim($path, '/');
+  return student_public_asset_url($path);
 }
 
 function student_assessment_fetch_item(PDO $pdo, int $gradeId, string $type, int $assessmentId): ?array {

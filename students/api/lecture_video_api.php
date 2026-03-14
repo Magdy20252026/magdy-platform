@@ -1,5 +1,5 @@
 <?php
-require __DIR__ . '/../../admin/inc/db.php';
+require __DIR__ . '/../inc/db.php';
 require_once __DIR__ . '/../inc/platform_settings.php';
 require __DIR__ . '/../inc/student_auth.php';
 require __DIR__ . '/../inc/access_control.php';

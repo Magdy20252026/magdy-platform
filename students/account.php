@@ -1,10 +1,10 @@
 <?php
-require __DIR__ . '/../admin/inc/db.php';
+require __DIR__ . '/inc/db.php';
 require_once __DIR__ . '/inc/platform_settings.php';
 require __DIR__ . '/inc/student_auth.php';
-require_once __DIR__ . '/../admin/inc/wallet_transactions.php';
+require_once __DIR__ . '/inc/wallet_transactions.php';
 require_once __DIR__ . '/inc/assessments.php';
-require __DIR__ . '/../inc/platform_features.php';
+require __DIR__ . '/inc/platform_features.php';
 
 no_cache_headers();
 student_require_login();
@@ -48,14 +48,14 @@ if ($platformName === '') $platformName = 'منصتي التعليمية';
 
 $logoDb = trim((string)($row['platform_logo'] ?? ''));
 $logoUrl = null;
-if ($logoDb !== '') $logoUrl = '../admin/' . ltrim($logoDb, '/');
+if ($logoDb !== '') $logoUrl = student_public_asset_url($logoDb);
 
 /* footer data */
 $footerEnabled = (int)($row['footer_enabled'] ?? 1);
 
 $footerLogoDb = trim((string)($row['footer_logo_path'] ?? ''));
 $footerLogoUrl = null;
-if ($footerLogoDb !== '') $footerLogoUrl = '../admin/' . ltrim($footerLogoDb, '/');
+if ($footerLogoDb !== '') $footerLogoUrl = student_public_asset_url($footerLogoDb);
 
 $footerSocialTitle = trim((string)($row['footer_social_title'] ?? 'السوشيال ميديا'));
 $footerContactTitle = trim((string)($row['footer_contact_title'] ?? 'تواصل معنا'));
@@ -1177,7 +1177,7 @@ if ($cssVer === '' || $cssVer === '0') $cssVer = (string)time();
 
                   $imgDb = trim((string)($c['image_path'] ?? ''));
                   $imgUrl = null;
-                  if ($imgDb !== '') $imgUrl = '../admin/' . ltrim($imgDb, '/');
+                  if ($imgDb !== '') $imgUrl = student_public_asset_url($imgDb);
 
                   $details = trim((string)($c['details'] ?? ''));
                   $courseLast = (string)($courseLastUpdateMap[(int)$c['id']] ?? '');
@@ -1272,7 +1272,7 @@ if ($cssVer === '' || $cssVer === '0') $cssVer = (string)time();
                 <?php
                   $imgDb = trim((string)($c['image_path'] ?? ''));
                   $imgUrl = null;
-                  if ($imgDb !== '') $imgUrl = '../admin/' . ltrim($imgDb, '/');
+                  if ($imgDb !== '') $imgUrl = student_public_asset_url($imgDb);
 
                   $details = trim((string)($c['details'] ?? ''));
                   $courseLast = (string)($courseLastUpdateMap[(int)$c['id']] ?? '');
@@ -1448,7 +1448,7 @@ if ($cssVer === '' || $cssVer === '0') $cssVer = (string)time();
                   </div>
 
                   <?php if (trim((string)($post['body'] ?? '')) !== ''): ?><div class="acc-feedBody"><?php echo nl2br(h((string)$post['body'])); ?></div><?php endif; ?>
-                  <?php if ($postImage !== ''): ?><div class="acc-feedImage"><img src="<?php echo h('../admin/' . ltrim($postImage, '/')); ?>" alt="صورة المنشور"></div><?php endif; ?>
+                  <?php if ($postImage !== ''): ?><div class="acc-feedImage"><img src="<?php echo h(student_public_asset_url($postImage)); ?>" alt="صورة المنشور"></div><?php endif; ?>
 
                   <div class="acc-feedStats">
                     <span class="acc-chip">❤️ إجمالي التفاعلات: <?php echo (int)($post['reactions_total'] ?? 0); ?></span>
@@ -1524,7 +1524,7 @@ if ($cssVer === '' || $cssVer === '0') $cssVer = (string)time();
                       <div class="acc-chatItem">
                         <div class="acc-chatUser">
                           <?php if ($imgUrl !== ''): ?>
-                            <img class="acc-avatar" src="<?php echo h('../admin/' . ltrim($imgUrl, '/')); ?>" alt="<?php echo h((string)$adminChat['display_name']); ?>">
+                            <img class="acc-avatar" src="<?php echo h(student_public_asset_url($imgUrl)); ?>" alt="<?php echo h((string)$adminChat['display_name']); ?>">
                           <?php else: ?>
                             <div class="acc-avatar" style="display:grid;place-items:center;background:rgba(59,130,246,.12);">👨‍🏫</div>
                           <?php endif; ?>
@@ -1557,7 +1557,7 @@ if ($cssVer === '' || $cssVer === '0') $cssVer = (string)time();
                         <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;">
                           <div class="acc-chatUser">
                             <?php if ($imgUrl !== ''): ?>
-                              <img class="acc-avatar" src="<?php echo h('../admin/' . ltrim($imgUrl, '/')); ?>" alt="<?php echo h((string)$conversation['display_name']); ?>">
+                              <img class="acc-avatar" src="<?php echo h(student_public_asset_url($imgUrl)); ?>" alt="<?php echo h((string)$conversation['display_name']); ?>">
                             <?php else: ?>
                               <div class="acc-avatar" style="display:grid;place-items:center;background:rgba(59,130,246,.12);">👨‍🏫</div>
                             <?php endif; ?>
@@ -1583,7 +1583,7 @@ if ($cssVer === '' || $cssVer === '0') $cssVer = (string)time();
                 <div class="acc-feedHead" style="margin-bottom:14px;">
                   <div class="acc-chatUser">
                     <?php if ($convImg !== ''): ?>
-                      <img class="acc-avatar" src="<?php echo h('../admin/' . ltrim($convImg, '/')); ?>" alt="<?php echo h((string)$selectedConversation['display_name']); ?>">
+                      <img class="acc-avatar" src="<?php echo h(student_public_asset_url($convImg)); ?>" alt="<?php echo h((string)$selectedConversation['display_name']); ?>">
                     <?php else: ?>
                       <div class="acc-avatar" style="display:grid;place-items:center;background:rgba(59,130,246,.12);">👨‍🏫</div>
                     <?php endif; ?>
@@ -1829,7 +1829,7 @@ if ($cssVer === '' || $cssVer === '0') $cssVer = (string)time();
                 <?php
                   $socIconDb = trim((string)($s['icon_path'] ?? ''));
                   $socIconUrl = null;
-                  if ($socIconDb !== '') $socIconUrl = '../admin/' . ltrim($socIconDb, '/');
+                  if ($socIconDb !== '') $socIconUrl = student_public_asset_url($socIconDb);
                 ?>
                 <li class="footer__item">
                   <a class="footer__link" href="<?php echo h((string)$s['url']); ?>" target="_blank" rel="noopener">

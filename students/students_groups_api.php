@@ -1,6 +1,6 @@
 <?php
 // ✅ Alias API used by register.php + admin/students.php scripts
-require __DIR__ . '/../admin/inc/db.php';
+require __DIR__ . '/inc/db.php';
 
 header('Content-Type: application/json; charset=utf-8');
 

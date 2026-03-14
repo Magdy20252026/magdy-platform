@@ -18,14 +18,7 @@ if ($platformName === '') $platformName = 'منصتي التعليمية';
 $logoDb = trim((string)($row['platform_logo'] ?? ''));
 
 // DB usually stores: uploads/platform/xxx.png
-$logoUrl = null;
-if ($logoDb !== '') {
-  if (strpos($logoDb, 'admin/') === 0 || strpos($logoDb, '/admin/') === 0) {
-    $logoUrl = $logoDb;
-  } else {
-    $logoUrl = '../admin/' . ltrim($logoDb, '/');
-  }
-}
+$logoUrl = student_public_asset_url($logoDb);
 
 $isLogged = !empty($_SESSION['student_id']);
 ?>

@@ -5,7 +5,7 @@
 // 2) If not enrolled in course => lecture open only if enrolled in that lecture.
 // 3) If course.access_type = free => open.
 
-require __DIR__ . '/../../admin/inc/db.php';
+require __DIR__ . '/../inc/db.php';
 require_once __DIR__ . '/assessments.php';
 
 function student_has_course_access(PDO $pdo, int $studentId, int $courseId): bool {

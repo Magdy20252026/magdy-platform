@@ -1,5 +1,5 @@
 <?php
-require __DIR__ . '/../admin/inc/db.php';
+require __DIR__ . '/inc/db.php';
 require_once __DIR__ . '/inc/platform_settings.php';
 require __DIR__ . '/inc/student_auth.php';
 
@@ -26,7 +26,7 @@ $heroTeacherImageDb = trim((string)($row['hero_teacher_image'] ?? ''));
 
 $heroTeacherImageUrl = null;
 if ($heroTeacherImageDb !== '') {
-  $heroTeacherImageUrl = '../admin/' . ltrim($heroTeacherImageDb, '/');
+  $heroTeacherImageUrl = student_public_asset_url($heroTeacherImageDb);
 }
 
 $hasHero =
@@ -110,7 +110,7 @@ $footerEnabled = (int)($row['footer_enabled'] ?? 1);
 
 $footerLogoDb = trim((string)($row['footer_logo_path'] ?? ''));
 $footerLogoUrl = null;
-if ($footerLogoDb !== '') $footerLogoUrl = '../admin/' . ltrim($footerLogoDb, '/');
+if ($footerLogoDb !== '') $footerLogoUrl = student_public_asset_url($footerLogoDb);
 
 $footerSocialTitle = trim((string)($row['footer_social_title'] ?? 'السوشيال ميديا'));
 $footerContactTitle = trim((string)($row['footer_contact_title'] ?? 'تواصل معنا'));
@@ -266,7 +266,7 @@ function footer_icon_svg(string $key): string {
               $theme = ((string)($c['theme'] ?? 'light') === 'dark') ? 'dark' : 'light';
               $iconDb = trim((string)($c['icon_path'] ?? ''));
               $iconUrl = null;
-              if ($iconDb !== '') $iconUrl = '../admin/' . ltrim($iconDb, '/');
+              if ($iconDb !== '') $iconUrl = student_public_asset_url($iconDb);
             ?>
             <article class="fc-card fc-card--<?php echo h($theme); ?>">
               <?php if ($iconUrl): ?>
@@ -300,7 +300,7 @@ function footer_icon_svg(string $key): string {
             <?php
               $imgDb = trim((string)($g['image_path'] ?? ''));
               $imgUrl = null;
-              if ($imgDb !== '') $imgUrl = '../admin/' . ltrim($imgDb, '/');
+              if ($imgDb !== '') $imgUrl = student_public_asset_url($imgDb);
               $name = (string)($g['name'] ?? '');
               $goUrl = 'register.php';
             ?>
@@ -376,7 +376,7 @@ function footer_icon_svg(string $key): string {
                   <?php
                     $socIconDb = trim((string)($s['icon_path'] ?? ''));
                     $socIconUrl = null;
-                    if ($socIconDb !== '') $socIconUrl = '../admin/' . ltrim($socIconDb, '/');
+                    if ($socIconDb !== '') $socIconUrl = student_public_asset_url($socIconDb);
                   ?>
                   <li class="footer__item">
                     <a class="footer__link" href="<?php echo h((string)$s['url']); ?>" target="_blank" rel="noopener">

@@ -1,5 +1,5 @@
 <?php
-require __DIR__ . '/../admin/inc/db.php';
+require __DIR__ . '/inc/db.php';
 require_once __DIR__ . '/inc/platform_settings.php';
 require __DIR__ . '/inc/student_auth.php';
 require_once __DIR__ . '/inc/assessments.php';
@@ -27,7 +27,7 @@ $settingsRow = get_platform_settings_row($pdo);
 $platformName = trim((string)($settingsRow['platform_name'] ?? 'منصتي التعليمية'));
 if ($platformName === '') $platformName = 'منصتي التعليمية';
 $logoDb = trim((string)($settingsRow['platform_logo'] ?? ''));
-$logoUrl = $logoDb !== '' ? '../admin/' . ltrim($logoDb, '/') : null;
+$logoUrl = $logoDb !== '' ? student_public_asset_url($logoDb) : null;
 
 $studentId = (int)($_SESSION['student_id'] ?? 0);
 $stmt = $pdo->prepare("
@@ -145,7 +145,7 @@ $pageTitle = $config ? ($config['label'] . ' - ' . $platformName) : ('المحت
   <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;800;900;1000&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="assets/css/site.css">
   <link rel="stylesheet" href="assets/css/account.css?v=<?php echo h((string)@filemtime(__DIR__ . '/assets/css/account.css')); ?>">
-  <link rel="stylesheet" href="../admin/assets/css/exams.css?v=<?php echo h((string)@filemtime(__DIR__ . '/../admin/assets/css/exams.css')); ?>">
+  <link rel="stylesheet" href="assets/css/exams.css?v=<?php echo h((string)@filemtime(__DIR__ . '/assets/css/exams.css')); ?>">
   <style>
     body{padding:18px 0}
     .ass-wrap{max-width:1120px;margin:0 auto;padding:0 12px}
