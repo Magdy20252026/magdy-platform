@@ -668,8 +668,10 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
   };
 
   document.addEventListener('click', function(e){
-    var link = e.target && e.target.closest ? e.target.closest('a[data-app-pdf-link="1"]') : null;
-    if (!link || !window.StudentAppBridge || typeof window.StudentAppBridge.openProtectedPdf !== 'function') return;
+    var target = e.target;
+    if (!target || typeof target.closest !== 'function' || !window.StudentAppBridge) return;
+    var link = target.closest('a[data-app-pdf-link="1"]');
+    if (!link) return;
     var href = String(link.getAttribute('href') || '').trim();
     if (!href) return;
     e.preventDefault();
