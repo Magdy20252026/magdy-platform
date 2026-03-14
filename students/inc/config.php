@@ -8,3 +8,4 @@ define('DB_PORT', '3306');
 
 // App
 define('APP_TIMEZONE', 'Africa/Cairo');
+define('APP_EMBED_SECRET_KEY', '9F2kL7sQ3mN8vX1aC6rT0pY5wD4hG2jU');
