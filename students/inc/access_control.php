@@ -528,7 +528,9 @@ function student_is_supported_video_embed_html(string $embedHtml, string $videoT
   $embedHtml = trim($embedHtml);
   $videoType = strtolower(trim($videoType));
   if ($embedHtml === '' || $videoType === '') return false;
-  if (!class_exists('DOMDocument')) return false;
+  if (!class_exists('DOMDocument')) {
+    return student_is_supported_video_embed_html_fallback($embedHtml, $videoType);
+  }
 
   $internalErrors = libxml_use_internal_errors(true);
   $dom = new DOMDocument('1.0', 'UTF-8');
@@ -538,13 +540,13 @@ function student_is_supported_video_embed_html(string $embedHtml, string $videoT
   );
   libxml_clear_errors();
   libxml_use_internal_errors($internalErrors);
-  if (!$loaded) return false;
+  if (!$loaded) return student_is_supported_video_embed_html_fallback($embedHtml, $videoType);
 
   $root = $dom->getElementsByTagName('div')->item(0);
   if (!$root) return false;
 
   $allowedTags = ['div', 'iframe', 'script'];
-  $allowedAttrs = ['id', 'class', 'src', 'type', 'async', 'defer', 'title', 'loading', 'referrerpolicy', 'allow', 'allowfullscreen', 'width', 'height', 'frameborder', 'scrolling', 'name', 'sandbox'];
+  $allowedAttrs = ['id', 'class', 'src', 'type', 'async', 'defer', 'title', 'loading', 'referrerpolicy', 'allow', 'allowfullscreen', 'webkitallowfullscreen', 'mozallowfullscreen', 'allowpaymentrequest', 'playsinline', 'width', 'height', 'frameborder', 'scrolling', 'name', 'sandbox', 'style', 'tabindex'];
   $hasTrustedSource = false;
 
   foreach ($root->getElementsByTagName('*') as $node) {
@@ -595,6 +597,50 @@ function student_is_supported_video_embed_html(string $embedHtml, string $videoT
   return $hasTrustedSource;
 }
 
+function student_is_supported_video_embed_html_fallback(string $embedHtml, string $videoType): bool {
+  $embedHtml = trim($embedHtml);
+  $videoType = strtolower(trim($videoType));
+  if ($embedHtml === '' || $videoType === '') return false;
+  if (preg_match('~<\s*(?!/?(?:div|iframe|script)\b)[a-z0-9:_-]+~i', $embedHtml)) return false;
+  if (preg_match('~\bon[a-z0-9_-]+\s*=~i', $embedHtml)) return false;
+  if (preg_match('~(?:javascript|vbscript|data)\s*:|%(?:0*[46]a|0*64|0*61|0*76|0*73)~i', $embedHtml)) return false;
+
+  $hasTrustedSource = false;
+
+  preg_match_all('/\bsrc\s*=\s*(["\'])(.*?)\1/is', $embedHtml, $quotedSources);
+  foreach (($quotedSources[2] ?? []) as $url) {
+    if (!student_is_allowed_video_embed_url((string)$url, $videoType)) return false;
+    $hasTrustedSource = true;
+  }
+
+  preg_match_all('/\bsrc\s*=\s*([^\s>]+)/i', $embedHtml, $bareSources);
+  foreach (($bareSources[1] ?? []) as $url) {
+    $cleanUrl = trim((string)$url, "\"'");
+    if ($cleanUrl === '') continue;
+    if (!student_is_allowed_video_embed_url($cleanUrl, $videoType)) return false;
+    $hasTrustedSource = true;
+  }
+
+  if (preg_match_all('~<script\b[^>]*>(.*?)</script>~is', $embedHtml, $inlineScripts)) {
+    foreach (($inlineScripts[1] ?? []) as $scriptText) {
+      $scriptText = trim((string)$scriptText);
+      if ($scriptText === '') continue;
+      if (preg_match('~(?:eval\s*\(|new\s+Function\s*\(|setTimeout\s*\(\s*[\'"]|setInterval\s*\(\s*[\'"])~i', $scriptText)) return false;
+
+      preg_match_all('~(?:(?:https?:)?//)[a-z0-9.-]+(?::\d+)?(?:/[^\s\'"]*)?~i', $scriptText, $scriptUrls);
+      $urls = $scriptUrls[0] ?? [];
+      if (empty($urls) && !$hasTrustedSource) return false;
+
+      foreach ($urls as $url) {
+        if (!student_is_allowed_video_embed_url((string)$url, $videoType)) return false;
+        $hasTrustedSource = true;
+      }
+    }
+  }
+
+  return $hasTrustedSource;
+}
+
 function student_build_video_player_html(array $videoRow, string $origin = ''): string {
   $iframeHtml = student_decrypt_video_iframe($videoRow['embed_iframe_enc'] ?? null, $videoRow['embed_iframe_iv'] ?? null);
   if ($iframeHtml === '') $iframeHtml = (string)($videoRow['embed_iframe'] ?? '');
@@ -611,7 +657,7 @@ function student_build_video_player_html(array $videoRow, string $origin = ''): 
   $title = htmlspecialchars((string)($videoRow['title'] ?? 'مشغل الفيديو'), ENT_QUOTES, 'UTF-8');
   $srcAttr = htmlspecialchars($src, ENT_QUOTES, 'UTF-8');
 
-  return '<iframe class="acc-embeddedFrame" id="lectureVideoFrame" src="' . $srcAttr . '" title="' . $title . '" loading="lazy" referrerpolicy="strict-origin-when-cross-origin" allow="autoplay; encrypted-media; gyroscope; fullscreen" allowfullscreen></iframe>';
+  return '<iframe class="acc-embeddedFrame" id="lectureVideoFrame" src="' . $srcAttr . '" title="' . $title . '" loading="lazy" referrerpolicy="strict-origin-when-cross-origin" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen" allowfullscreen></iframe>';
 }
 
 function student_resolve_pdf_absolute_path(string $filePath): string {
