@@ -448,6 +448,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
                 <?php if ($isLectureOpen): ?>
                   <a
                     class="acc-modal-btn acc-modal-btn--ghost"
+                    data-app-pdf-link="1"
                     href="lecture_pdf_viewer.php?pdf_id=<?php echo $pdfId; ?>"
                   >عرض</a>
                   <div class="acc-item__lock">✅</div>
@@ -665,6 +666,21 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
       }
     } catch(e) { setLoading(btn, false); showMsg('❌ خطأ في الاتصال.', false); }
   };
+
+  document.addEventListener('click', function(e){
+    var link = e.target && e.target.closest ? e.target.closest('a[data-app-pdf-link="1"]') : null;
+    if (!link || !window.StudentAppBridge || typeof window.StudentAppBridge.openProtectedPdf !== 'function') return;
+    var href = String(link.getAttribute('href') || '').trim();
+    if (!href) return;
+    e.preventDefault();
+    try {
+      var url = new URL(href, window.location.href);
+      url.searchParams.set('app_open', '1');
+      window.location.href = url.toString();
+    } catch(err) {
+      window.location.href = href;
+    }
+  });
 })();
 </script>
 

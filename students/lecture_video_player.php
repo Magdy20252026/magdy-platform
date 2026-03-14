@@ -1525,6 +1525,10 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
 
   window.setInterval(function(){
     if (protectedPageClosed) return;
+    if (isNativeStudentAppPlayback()) {
+      devtoolsDetectionStrikes = 0;
+      return;
+    }
     if (document.hidden) {
       devtoolsDetectionStrikes = 0;
       return;

@@ -47,6 +47,10 @@ if ($pdfAccessToken !== '') {
   $pdfDirectSrc .= '&access_token=' . rawurlencode($pdfAccessToken);
   $pdfFrameSrc .= '&access_token=' . rawurlencode($pdfAccessToken);
 }
+if ((string)($_GET['app_open'] ?? '') === '1') {
+  header('Location: ' . $pdfDirectSrc);
+  exit;
+}
 
 $stmt = $pdo->prepare("
   SELECT s.full_name, s.wallet_balance, s.barcode
