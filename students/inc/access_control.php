@@ -580,7 +580,7 @@ function student_is_supported_video_embed_html(string $embedHtml, string $videoT
       $scriptText = trim((string)$node->textContent);
       if ($scriptText === '') continue;
       if (preg_match('~(?:javascript|vbscript|data)\s*:~i', $scriptText)) return false;
-      if (preg_match('~(?:eval\s*\(|new\s+Function\s*\(|setTimeout\s*\(\s*[\'"]|setInterval\s*\(\s*[\'"])~i', $scriptText)) return false;
+      if (preg_match('~(?:eval\s*\(|new\s+Function\s*\(|setTimeout\s*\(|setInterval\s*\()~i', $scriptText)) return false;
 
       preg_match_all('~(?:(?:https?:)?//)[a-z0-9.-]+(?::\d+)?(?:/[^\s\'"]*)?~i', $scriptText, $matches);
       $urls = $matches[0] ?? [];
@@ -602,7 +602,7 @@ function student_is_supported_video_embed_html_fallback(string $embedHtml, strin
   $videoType = strtolower(trim($videoType));
   if ($embedHtml === '' || $videoType === '') return false;
   if (preg_match('~<\s*(?!/?(?:div|iframe|script)\b)[a-z0-9:_-]+~i', $embedHtml)) return false;
-  if (preg_match('~\bon[a-z0-9_-]+\s*=~i', $embedHtml)) return false;
+  if (preg_match('~\bon[a-z]+\s*=~i', $embedHtml)) return false;
   if (preg_match('~(?:javascript|vbscript|data)\s*:|%(?:0*[46]a|0*64|0*61|0*76|0*73)~i', $embedHtml)) return false;
 
   $hasTrustedSource = false;
@@ -613,7 +613,7 @@ function student_is_supported_video_embed_html_fallback(string $embedHtml, strin
     $hasTrustedSource = true;
   }
 
-  preg_match_all('/\bsrc\s*=\s*([^\s>]+)/i', $embedHtml, $bareSources);
+  preg_match_all('~\bsrc\s*=\s*(https?://[^\s"\'<>]+)~i', $embedHtml, $bareSources);
   foreach (($bareSources[1] ?? []) as $url) {
     $cleanUrl = trim((string)$url, "\"'");
     if ($cleanUrl === '') continue;
@@ -625,9 +625,9 @@ function student_is_supported_video_embed_html_fallback(string $embedHtml, strin
     foreach (($inlineScripts[1] ?? []) as $scriptText) {
       $scriptText = trim((string)$scriptText);
       if ($scriptText === '') continue;
-      if (preg_match('~(?:eval\s*\(|new\s+Function\s*\(|setTimeout\s*\(\s*[\'"]|setInterval\s*\(\s*[\'"])~i', $scriptText)) return false;
+      if (preg_match('~(?:eval\s*\(|new\s+Function\s*\(|setTimeout\s*\(|setInterval\s*\()~i', $scriptText)) return false;
 
-      preg_match_all('~(?:(?:https?:)?//)[a-z0-9.-]+(?::\d+)?(?:/[^\s\'"]*)?~i', $scriptText, $scriptUrls);
+      preg_match_all('~https?://[a-z0-9.-]+(?::\d+)?(?:/[^\s\'"]*)?~i', $scriptText, $scriptUrls);
       $urls = $scriptUrls[0] ?? [];
       if (empty($urls) && !$hasTrustedSource) return false;
 
@@ -657,7 +657,7 @@ function student_build_video_player_html(array $videoRow, string $origin = ''): 
   $title = htmlspecialchars((string)($videoRow['title'] ?? 'مشغل الفيديو'), ENT_QUOTES, 'UTF-8');
   $srcAttr = htmlspecialchars($src, ENT_QUOTES, 'UTF-8');
 
-  return '<iframe class="acc-embeddedFrame" id="lectureVideoFrame" src="' . $srcAttr . '" title="' . $title . '" loading="lazy" referrerpolicy="strict-origin-when-cross-origin" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen" allowfullscreen></iframe>';
+  return '<iframe class="acc-embeddedFrame" id="lectureVideoFrame" src="' . $srcAttr . '" title="' . $title . '" loading="lazy" referrerpolicy="strict-origin-when-cross-origin" allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen" allowfullscreen></iframe>';
 }
 
 function student_resolve_pdf_absolute_path(string $filePath): string {
