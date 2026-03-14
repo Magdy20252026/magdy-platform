@@ -41,10 +41,10 @@ if ($absolutePath === '') {
 
 $pdfAccessToken = student_create_pdf_access_token($studentId, $pdfId);
 $pdfBaseSrc = 'lecture_pdf.php?pdf_id=' . (int)$pdfId;
-// Native app downloads the PDF with the logged-in student's WebView cookies, so this URL remains session-protected there.
 $pdfDirectSrc = $pdfBaseSrc;
 $pdfFrameSrc = $pdfBaseSrc;
 if ($pdfAccessToken !== '') {
+  $pdfDirectSrc .= '&access_token=' . rawurlencode($pdfAccessToken);
   $pdfFrameSrc .= '&access_token=' . rawurlencode($pdfAccessToken);
 }
 

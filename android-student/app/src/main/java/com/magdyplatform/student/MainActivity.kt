@@ -341,6 +341,10 @@ class MainActivity : AppCompatActivity() {
         val path = originalPath.lowercase()
         return when {
             path.endsWith("/$LECTURE_PDF_VIEWER_FILENAME") -> {
+                val accessToken = uri.getQueryParameter("access_token")?.trim().orEmpty()
+                if (accessToken.isEmpty()) {
+                    return null
+                }
                 val lastSlashIndex = originalPath.lastIndexOf('/')
                 val directPdfPath = if (lastSlashIndex >= 0) {
                     originalPath.substring(0, lastSlashIndex + 1) + LECTURE_PDF_FILENAME
