@@ -8,4 +8,22 @@ define('DB_PORT', '3306');
 
 // App
 define('APP_TIMEZONE', 'Africa/Cairo');
-define('APP_EMBED_SECRET_KEY', '9F2kL7sQ3mN8vX1aC6rT0pY5wD4hG2jU');
+define('APP_EMBED_SECRET_KEY_MIN_LENGTH', 32);
+$embedSecret = getenv('APP_EMBED_SECRET_KEY');
+if (!is_string($embedSecret) || strlen($embedSecret) < APP_EMBED_SECRET_KEY_MIN_LENGTH) {
+  $embedSecret = '';
+  $adminConfigPath = dirname(__DIR__, 2) . '/admin/inc/config.php';
+  if (is_file($adminConfigPath) && is_readable($adminConfigPath)) {
+    $adminConfigContents = file_get_contents($adminConfigPath);
+    if (
+      is_string($adminConfigContents) &&
+      preg_match('/define\(\s*[\'"]APP_EMBED_SECRET_KEY[\'"]\s*,\s*[\'"]([A-Za-z0-9_-]{32,})[\'"]\s*\)\s*;/', $adminConfigContents, $matches)
+    ) {
+      $embedSecret = (string)($matches[1] ?? '');
+    }
+  }
+}
+if (strlen($embedSecret) < APP_EMBED_SECRET_KEY_MIN_LENGTH) {
+  $embedSecret = '';
+}
+define('APP_EMBED_SECRET_KEY', $embedSecret);
