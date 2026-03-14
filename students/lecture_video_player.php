@@ -1,5 +1,5 @@
 <?php
-require __DIR__ . '/../admin/inc/db.php';
+require __DIR__ . '/inc/db.php';
 require_once __DIR__ . '/inc/platform_settings.php';
 require __DIR__ . '/inc/student_auth.php';
 require __DIR__ . '/inc/access_control.php';
@@ -67,7 +67,7 @@ $row = get_platform_settings_row($pdo);
 $platformName = trim((string)($row['platform_name'] ?? 'منصتي التعليمية'));
 if ($platformName === '') $platformName = 'منصتي التعليمية';
 $logoDb = trim((string)($row['platform_logo'] ?? ''));
-$logoUrl = $logoDb !== '' ? '../admin/' . ltrim($logoDb, '/') : null;
+$logoUrl = $logoDb !== '' ? student_public_asset_url($logoDb) : null;
 
 $studentName = (string)($student['full_name'] ?? ($_SESSION['student_name'] ?? ''));
 $wallet = (float)($student['wallet_balance'] ?? 0);

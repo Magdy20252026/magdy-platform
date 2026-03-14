@@ -1,5 +1,7 @@
 <?php
 // students/inc/platform_settings.php
+require_once __DIR__ . '/path_helpers.php';
+
 
 function ensure_platform_settings_schema(PDO $pdo): void {
   $pdo->exec("

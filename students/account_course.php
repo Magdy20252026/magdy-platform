@@ -1,5 +1,5 @@
 <?php
-require __DIR__ . '/../admin/inc/db.php';
+require __DIR__ . '/inc/db.php';
 require_once __DIR__ . '/inc/platform_settings.php';
 require __DIR__ . '/inc/student_auth.php';
 require __DIR__ . '/inc/access_control.php';
@@ -24,14 +24,14 @@ if ($platformName === '') $platformName = 'منصتي التعليمية';
 
 $logoDb = trim((string)($row['platform_logo'] ?? ''));
 $logoUrl = null;
-if ($logoDb !== '') $logoUrl = '../admin/' . ltrim($logoDb, '/');
+if ($logoDb !== '') $logoUrl = student_public_asset_url($logoDb);
 
 /* footer (same pattern as account.php) */
 $footerEnabled = (int)($row['footer_enabled'] ?? 1);
 
 $footerLogoDb = trim((string)($row['footer_logo_path'] ?? ''));
 $footerLogoUrl = null;
-if ($footerLogoDb !== '') $footerLogoUrl = '../admin/' . ltrim($footerLogoDb, '/');
+if ($footerLogoDb !== '') $footerLogoUrl = student_public_asset_url($footerLogoDb);
 
 $footerSocialTitle = trim((string)($row['footer_social_title'] ?? 'السوشيال ميديا'));
 $footerContactTitle = trim((string)($row['footer_contact_title'] ?? 'تواصل معنا'));
@@ -194,7 +194,7 @@ if ($courseCssVer === '' || $courseCssVer === '0') $courseCssVer = (string)time(
 /* course cover url */
 $imgDb = trim((string)($course['image_path'] ?? ''));
 $imgUrl = null;
-if ($imgDb !== '') $imgUrl = '../admin/' . ltrim($imgDb, '/');
+if ($imgDb !== '') $imgUrl = student_public_asset_url($imgDb);
 
 /* pricing (course) */
 $accessType = (string)($course['access_type'] ?? 'attendance'); // attendance | buy | free
@@ -457,7 +457,7 @@ $effectiveCoursePriceStr = number_format($effectiveCoursePrice, 2);
                 <?php
                   $socIconDb = trim((string)($s['icon_path'] ?? ''));
                   $socIconUrl = null;
-                  if ($socIconDb !== '') $socIconUrl = '../admin/' . ltrim($socIconDb, '/');
+                  if ($socIconDb !== '') $socIconUrl = student_public_asset_url($socIconDb);
                 ?>
                 <li class="footer__item">
                   <a class="footer__link" href="<?php echo h((string)$s['url']); ?>" target="_blank" rel="noopener">

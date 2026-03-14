@@ -1,5 +1,5 @@
 <?php
-require __DIR__ . '/../admin/inc/db.php';
+require __DIR__ . '/inc/db.php';
 require_once __DIR__ . '/inc/platform_settings.php';
 require __DIR__ . '/inc/student_auth.php';
 require __DIR__ . '/inc/access_control.php';
@@ -24,14 +24,14 @@ if ($platformName === '') $platformName = 'منصتي التعليمية';
 /* ✅ show platform logo */
 $logoDb = trim((string)($row['platform_logo'] ?? ''));
 $logoUrl = null;
-if ($logoDb !== '') $logoUrl = '../admin/' . ltrim($logoDb, '/');
+if ($logoDb !== '') $logoUrl = student_public_asset_url($logoDb);
 
 /* footer */
 $footerEnabled = (int)($row['footer_enabled'] ?? 1);
 
 $footerLogoDb = trim((string)($row['footer_logo_path'] ?? ''));
 $footerLogoUrl = null;
-if ($footerLogoDb !== '') $footerLogoUrl = '../admin/' . ltrim($footerLogoDb, '/');
+if ($footerLogoDb !== '') $footerLogoUrl = student_public_asset_url($footerLogoDb);
 
 $footerSocialTitle = trim((string)($row['footer_social_title'] ?? 'السوشيال ميديا'));
 $footerContactTitle = trim((string)($row['footer_contact_title'] ?? 'تواصل معنا'));
@@ -487,7 +487,7 @@ if ($lecCssVer === '' || $lecCssVer === '0') $lecCssVer = (string)time();
                 <?php
                   $socIconDb = trim((string)($s['icon_path'] ?? ''));
                   $socIconUrl = null;
-                  if ($socIconDb !== '') $socIconUrl = '../admin/' . ltrim($socIconDb, '/');
+                  if ($socIconDb !== '') $socIconUrl = student_public_asset_url($socIconDb);
                 ?>
                 <li class="footer__item">
                   <a class="footer__link" href="<?php echo h((string)$s['url']); ?>" target="_blank" rel="noopener">
